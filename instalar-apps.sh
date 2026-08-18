@@ -116,11 +116,15 @@ unset VSCODE_ESM_ENTRYPOINT
 unset VSCODE_HANDLES_UNCAUGHT_ERRORS
 unset VSCODE_NLS_CONFIG
 
-{
-    echo "[\$(date -Is)] Lanzando: $exec_path $extra_args \$*"
-    nohup "$exec_path" $extra_args "\$@" >>"\$log_file" 2>&1 &
-    echo "[\$(date -Is)] PID: \$!"
-} >>"\$log_file" 2>&1
+if [ -n "\${WAYLAND_DISPLAY:-}" ]; then
+    export MOZ_ENABLE_WAYLAND=1
+fi
+
+export MOZ_WEBRENDER=1
+export MOZ_ACCELERATED=1
+export GTK_USE_PORTAL=1
+
+exec "$exec_path" $extra_args "\$@"
 EOF
     sudo chmod +x "$wrapper_path"
     log_ok "Lanzador de terminal creado: $wrapper_path"
@@ -343,7 +347,7 @@ MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme
 EOF
     chmod +x "$DESKTOP_DIR/zen-browser.desktop"
 
-    create_wrapper "zen-browser" "$zen_dir/zen" "--name zen-browser --class zen-browser --ozone-platform=wayland --enable-features=UseOzonePlatform,WaylandWindowDecorations"
+    create_wrapper "zen-browser" "$zen_dir/zen" "--name zen-browser --class zen-browser"
 
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
     log_ok "¡Zen Browser instalado y configurado correctamente!"
