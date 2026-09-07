@@ -94,7 +94,7 @@ check_deps() {
 create_wrapper() {
     local cmd_name="$1"
     local exec_path="$2"
-    local extra_args="$3"
+    local extra_args="${3:-}"
     
     local wrapper_path="/usr/local/bin/$cmd_name"
     log_info "Creando lanzador de terminal en $wrapper_path..."
@@ -124,7 +124,36 @@ export MOZ_WEBRENDER=1
 export MOZ_ACCELERATED=1
 export GTK_USE_PORTAL=1
 
-exec "$exec_path" $extra_args "\$@"
+is_terminal_cmd() {
+    for arg in "\$@"; do
+        case "\$arg" in
+            -h|--help|-v|--version|-s|--status|-w|--wait|--verbose|--list-extensions|--install-extension)
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+# Si es un script CLI oficial (como bin/antigravity-ide o bin/codium), delegamos directamente en él
+# para que gestione parámetros, interactividad y salida por consola.
+# Si es un binario gráfico directo:
+# - En caso de parámetros de terminal/espera, se ejecuta en primer plano.
+# - En caso normal (abrir carpetas, archivos o sin args), se desacopla en segundo plano (nohup / disown)
+#   para liberar la terminal inmediatamente y evitar que se cierre la app al cerrar la terminal.
+case "$exec_path" in
+    */bin/*)
+        exec "$exec_path" $extra_args "\$@"
+        ;;
+    *)
+        if [ \$# -gt 0 ] && is_terminal_cmd "\$@"; then
+            exec "$exec_path" $extra_args "\$@"
+        else
+            nohup "$exec_path" $extra_args "\$@" >>"\$log_file" 2>&1 &
+            disown 2>/dev/null || true
+        fi
+        ;;
+esac
 EOF
     sudo chmod +x "$wrapper_path"
     log_ok "Lanzador de terminal creado: $wrapper_path"
@@ -366,18 +395,59 @@ register_local_zen() {
     configure_zen_launcher "$zen_dir"
 }
 
+is_zen_installed() {
+    [ -x "/opt/zen/zen" ] || command -v zen-browser &>/dev/null
+}
+
+get_installed_zen_version() {
+    local version=""
+    if [ -f "/opt/zen/application.ini" ]; then
+        version=$(grep -m1 '^Version=' "/opt/zen/application.ini" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)
+    fi
+    if [ -z "$version" ] && [ -x "/opt/zen/zen" ]; then
+        version=$(/opt/zen/zen --version 2>/dev/null | awk '{print $NF}' || true)
+    fi
+    printf '%s\n' "$version"
+}
+
 install_zen() {
-    echo -e "\n${BOLD}${GREEN}--- Instalando Zen Browser ---${RESET}"
+    local is_update=false
+    local current_version=""
+    if is_zen_installed; then
+        is_update=true
+        current_version=$(get_installed_zen_version)
+        if [ -n "$current_version" ]; then
+            echo -e "\n${BOLD}${GREEN}--- Actualizando Zen Browser (versión actual: v$current_version) ---${RESET}"
+        else
+            echo -e "\n${BOLD}${GREEN}--- Actualizando Zen Browser ---${RESET}"
+        fi
+    else
+        echo -e "\n${BOLD}${GREEN}--- Instalando Zen Browser ---${RESET}"
+    fi
 
     local architecture tarball=""
     local search_paths=("${DOWNLOAD_SEARCH_DIRS[@]}" ".")
     architecture=$(get_zen_architecture) || return 1
     tarball=$(find_zen_tarball "$architecture" "${search_paths[@]}" || true)
 
+    if [ "$is_update" = true ] && [ -n "$tarball" ]; then
+        log_info "Se encontró un archivo local de Zen Browser: $tarball"
+        echo -ne "¿Deseas usar este archivo local o descargar la última versión oficial? (u=usar local / D=descargar última versión) [D]: "
+        local reply=""
+        read -r reply || reply=""
+        if [[ ! "$reply" =~ ^[Uu] ]]; then
+            tarball=""
+        fi
+    fi
+
     if [ -n "$tarball" ]; then
-        log_ok "Se encontró un archivo local de Zen Browser: $tarball"
+        log_ok "Se utilizará el archivo local de Zen Browser: $tarball"
     else
-        log_info "No se encontró un tarball válido de Zen. Se descargará automáticamente en $DOWNLOADS_DIR."
+        if [ "$is_update" = true ]; then
+            log_info "Descargando la versión oficial más reciente de Zen Browser..."
+        else
+            log_info "No se encontró un tarball válido de Zen. Se descargará automáticamente en $DOWNLOADS_DIR."
+        fi
         tarball=$(download_zen_tarball "$architecture" "$DOWNLOADS_DIR") || return 1
     fi
 
@@ -385,6 +455,16 @@ install_zen() {
     extract_tarball "$tarball" "/opt/zen"
 
     configure_zen_launcher "/opt/zen"
+
+    local new_version
+    new_version=$(get_installed_zen_version)
+    if [ "$is_update" = true ]; then
+        if [ -n "$new_version" ]; then
+            log_ok "¡Zen Browser actualizado con éxito a la versión v$new_version!"
+        else
+            log_ok "¡Zen Browser actualizado con éxito!"
+        fi
+    fi
 }
 
 # === PERFIL: ANTIGRAVITY IDE ===
@@ -446,6 +526,21 @@ install_antigravity() {
 
     log_ok "Ejecutable de Antigravity IDE localizado: $exec_path"
 
+    # Buscar el ejecutable CLI oficial (en bin/) para la terminal
+    local cli_path=""
+    local bin_candidate
+    for bin_candidate in "$opt_dir/bin/antigravity" "$opt_dir/bin/antigravity-ide"; do
+        if [ -x "$bin_candidate" ]; then
+            cli_path="$bin_candidate"
+            break
+        fi
+    done
+
+    local terminal_launcher="${cli_path:-$exec_path}"
+    if [ -n "$cli_path" ]; then
+        log_ok "CLI oficial de Antigravity IDE localizado: $cli_path"
+    fi
+
     fix_opt_permissions "$opt_dir"
     ensure_antigravity_config_dir
     
@@ -475,7 +570,12 @@ EOF
     chmod +x "$DESKTOP_DIR/antigravity-ide.desktop"
     
     # Crear wrapper de terminal
-    create_wrapper "antigravity-ide" "$exec_path" ""
+    create_wrapper "antigravity-ide" "$terminal_launcher" ""
+
+    # Crear enlace de conveniencia para 'antigravity'
+    if [ ! -e "/usr/local/bin/antigravity" ]; then
+        sudo ln -sf "/usr/local/bin/antigravity-ide" "/usr/local/bin/antigravity" 2>/dev/null || true
+    fi
     
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
     
@@ -560,8 +660,19 @@ Icon=$icon_path
 EOF
     chmod +x "$DESKTOP_DIR/codium.desktop"
 
+    # Buscar CLI oficial en bin/ si existe
+    local codium_cli=""
+    local codium_candidate
+    for codium_candidate in "$opt_dir/bin/codium" "$opt_dir/bin/vscodium"; do
+        if [ -x "$codium_candidate" ]; then
+            codium_cli="$codium_candidate"
+            break
+        fi
+    done
+    local codium_target="${codium_cli:-$opt_dir/codium}"
+
     # Crear /usr/local/bin/codium; sus argumentos se conservan, por lo que "codium ." funciona.
-    create_wrapper "codium" "$opt_dir/codium" ""
+    create_wrapper "codium" "$codium_target" ""
 
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
@@ -888,17 +999,15 @@ EOF
     log_ok "¡Acceso directo configurado para la carpeta existente con éxito!"
 }
 
-# Al cargar este archivo desde una prueba solo se definen las funciones; el
-# menú y cualquier operación de instalación quedan reservados a su ejecución.
-if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
-    return 0
-fi
-
 # === MENÚ PRINCIPAL E INICIO ===
 show_help() {
     echo -e "Uso: $0 [opción]"
     echo -e "Opciones:"
-    echo -e "  --zen           Instala/registra Zen Browser directamente"
+    if is_zen_installed; then
+        echo -e "  --zen           Actualiza Zen Browser directamente"
+    else
+        echo -e "  --zen           Instala/registra Zen Browser directamente"
+    fi
     echo -e "  --zen-local     Registra Zen Browser ya instalado en /opt/zen"
     echo -e "  --antigravity   Instala/registra Antigravity IDE directamente"
     echo -e "  --vscodium      Instala/registra VSCodium directamente"
@@ -906,6 +1015,32 @@ show_help() {
     echo -e "  --zen-build    Compila Zen Browser desde código fuente en el directorio XDG de descargas"
     echo -e "  --gentoo-tools Abre el menú de compilación para Gentoo"
     echo -e "  -h, --help      Muestra esta ayuda"
+}
+
+show_main_menu() {
+    local zen_label="Instalar o Registrar ${BOLD}Zen Browser${RESET}"
+    if is_zen_installed; then
+        local zen_ver
+        zen_ver=$(get_installed_zen_version)
+        if [ -n "$zen_ver" ]; then
+            zen_label="Actualizar ${BOLD}Zen Browser${RESET} ${CYAN}(v$zen_ver instalada)${RESET}"
+        else
+            zen_label="Actualizar ${BOLD}Zen Browser${RESET}"
+        fi
+    fi
+
+    echo -e "\n${CYAN}==================================================${RESET}"
+    echo -e "${BOLD}${GREEN}        INSTALADOR DE APLICACIONES TARBALL       ${RESET}"
+    echo -e "${CYAN}==================================================${RESET}"
+    echo -e "Selecciona una opción:"
+    echo -e "  1) $zen_label"
+    echo -e "  2) Instalar o Registrar ${BOLD}Antigravity IDE${RESET}"
+    echo -e "  3) Instalar o Registrar ${BOLD}VSCodium${RESET}"
+    echo -e "  4) Abrir ${BOLD}Herramientas Gentoo${RESET} (compilar PCSX2 o Zen Browser)"
+    echo -e "  5) Instalar/Registrar una ${BOLD}Aplicación Genérica${RESET} (.tar.*)"
+    echo -e "  6) Configurar accesos directos para carpeta en ${BOLD}/opt/${RESET}"
+    echo -e "  7) Salir"
+    echo -e "${CYAN}--------------------------------------------------${RESET}"
 }
 
 show_gentoo_tools_menu() {
@@ -936,6 +1071,12 @@ show_gentoo_tools_menu() {
         esac
     done
 }
+
+# Al cargar este archivo desde una prueba solo se definen las funciones; el
+# menú y cualquier operación de instalación quedan reservados a su ejecución.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
 
 # Parsear argumentos si se proveen. Esta sección se deja después de definir el
 # submenú para que --gentoo-tools pueda invocarlo directamente.
@@ -979,18 +1120,7 @@ fi
 check_deps
 
 while true; do
-    echo -e "\n${CYAN}==================================================${RESET}"
-    echo -e "${BOLD}${GREEN}        INSTALADOR DE APLICACIONES TARBALL       ${RESET}"
-    echo -e "${CYAN}==================================================${RESET}"
-    echo -e "Selecciona una opción:"
-    echo -e "  1) Instalar o Registrar ${BOLD}Zen Browser${RESET}"
-    echo -e "  2) Instalar o Registrar ${BOLD}Antigravity IDE${RESET}"
-    echo -e "  3) Instalar o Registrar ${BOLD}VSCodium${RESET}"
-    echo -e "  4) Abrir ${BOLD}Herramientas Gentoo${RESET} (compilar PCSX2 o Zen Browser)"
-    echo -e "  5) Instalar/Registrar una ${BOLD}Aplicación Genérica${RESET} (.tar.*)"
-    echo -e "  6) Configurar accesos directos para carpeta en ${BOLD}/opt/${RESET}"
-    echo -e "  7) Salir"
-    echo -e "${CYAN}--------------------------------------------------${RESET}"
+    show_main_menu
     echo -ne "Opción: "
     read -r main_choice
     
