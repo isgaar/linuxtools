@@ -572,10 +572,12 @@ EOF
     # Crear wrapper de terminal
     create_wrapper "antigravity-ide" "$terminal_launcher" ""
 
-    # Crear enlace de conveniencia para 'antigravity'
-    if [ ! -e "/usr/local/bin/antigravity" ]; then
-        sudo ln -sf "/usr/local/bin/antigravity-ide" "/usr/local/bin/antigravity" 2>/dev/null || true
+    # Limpiar enlace o ejecutable residual 'antigravity' si existe (solo registrar 'antigravity-ide')
+    if [ -e "/usr/local/bin/antigravity" ] || [ -L "/usr/local/bin/antigravity" ]; then
+        log_info "Eliminando enlace residual /usr/local/bin/antigravity..."
+        sudo rm -f "/usr/local/bin/antigravity" 2>/dev/null || true
     fi
+    rm -f "$DESKTOP_DIR/antigravity.desktop" 2>/dev/null || true
     
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
     
@@ -1009,7 +1011,7 @@ show_help() {
         echo -e "  --zen           Instala/registra Zen Browser directamente"
     fi
     echo -e "  --zen-local     Registra Zen Browser ya instalado en /opt/zen"
-    echo -e "  --antigravity   Instala/registra Antigravity IDE directamente"
+    echo -e "  --antigravity-ide, --antigravity  Instala/registra Antigravity IDE directamente"
     echo -e "  --vscodium      Instala/registra VSCodium directamente"
     echo -e "  --pcsx2        Compila PCSX2 en ~/Documentos/pcsx2 y crea su lanzador KDE"
     echo -e "  --zen-build    Compila Zen Browser desde código fuente en el directorio XDG de descargas"
@@ -1089,7 +1091,7 @@ if [ $# -gt 0 ]; then
         --zen-local)
             register_local_zen
             ;;
-        --antigravity)
+        --antigravity|--antigravity-ide)
             install_antigravity
             ;;
         --vscodium|--codium)
