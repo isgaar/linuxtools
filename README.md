@@ -23,6 +23,8 @@ También admite ejecución directa:
 ./instalar-apps.sh --gentoo-tools # PCSX2 o Zen desde código fuente
 ./instalar-apps.sh --pcsx2
 ./instalar-apps.sh --zen-build
+./instalar-apps.sh --virtualbox   # VirtualBox en Fedora (akmods y Secure Boot)
+./instalar-apps.sh --fedora-tools # Menú de herramientas para Fedora
 ```
 
 ## Herramientas Gentoo
@@ -37,6 +39,17 @@ También admite ejecución directa:
 La primera compilación de Zen requiere al menos 30 GB libres y puede tardar
 varias horas. Usa `--clean` para limpiar sus artefactos generados o `--launch`
 para abrirlo al finalizar.
+
+## Herramientas Fedora
+
+- `fedora-tools/install_virtualbox.sh` automatiza la instalación y configuración
+  completa de VirtualBox en Fedora Linux:
+  - Habilita repositorios RPM Fusion (Free y Non-Free).
+  - Instala dependencias del kernel y herramientas de construcción (`kernel-devel`, `akmods`, `gcc`, `make`).
+  - Detección y soporte completo para UEFI Secure Boot mediante generación e importación de claves MOK (`kmodgenca` / `mokutil`).
+  - Compilación y firma forzada de módulos (`akmods --rebuild`) para el kernel en ejecución.
+  - Añade al usuario actual al grupo `vboxusers`.
+  - Instalación opcional y automatizada del Oracle VM VirtualBox Extension Pack.
 
 ## Requisitos
 

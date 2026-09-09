@@ -1016,6 +1016,8 @@ show_help() {
     echo -e "  --pcsx2        Compila PCSX2 en ~/Documentos/pcsx2 y crea su lanzador KDE"
     echo -e "  --zen-build    Compila Zen Browser desde código fuente en el directorio XDG de descargas"
     echo -e "  --gentoo-tools Abre el menú de compilación para Gentoo"
+    echo -e "  --virtualbox   Instala/configura VirtualBox en Fedora (RPM Fusion, akmods, Secure Boot)"
+    echo -e "  --fedora-tools Abre el menú de herramientas para Fedora"
     echo -e "  -h, --help      Muestra esta ayuda"
 }
 
@@ -1039,9 +1041,10 @@ show_main_menu() {
     echo -e "  2) Instalar o Registrar ${BOLD}Antigravity IDE${RESET}"
     echo -e "  3) Instalar o Registrar ${BOLD}VSCodium${RESET}"
     echo -e "  4) Abrir ${BOLD}Herramientas Gentoo${RESET} (compilar PCSX2 o Zen Browser)"
-    echo -e "  5) Instalar/Registrar una ${BOLD}Aplicación Genérica${RESET} (.tar.*)"
-    echo -e "  6) Configurar accesos directos para carpeta en ${BOLD}/opt/${RESET}"
-    echo -e "  7) Salir"
+    echo -e "  5) Abrir ${BOLD}Herramientas Fedora${RESET} (Instalar VirtualBox con Secure Boot)"
+    echo -e "  6) Instalar/Registrar una ${BOLD}Aplicación Genérica${RESET} (.tar.*)"
+    echo -e "  7) Configurar accesos directos para carpeta en ${BOLD}/opt/${RESET}"
+    echo -e "  8) Salir"
     echo -e "${CYAN}--------------------------------------------------${RESET}"
 }
 
@@ -1065,6 +1068,31 @@ show_gentoo_tools_menu() {
                 "$SCRIPT_DIR/gentoo-tools/zen-browser.sh" || true
                 ;;
             3)
+                return 0
+                ;;
+            *)
+                log_err "Opción inválida. Intenta de nuevo."
+                ;;
+        esac
+    done
+}
+
+show_fedora_tools_menu() {
+    while true; do
+        echo -e "\n${CYAN}==================================================${RESET}"
+        echo -e "${BOLD}${GREEN}              HERRAMIENTAS FEDORA               ${RESET}"
+        echo -e "${CYAN}==================================================${RESET}"
+        echo -e "  1) Instalar ${BOLD}VirtualBox${RESET} (RPM Fusion, akmods, Secure Boot y Extension Pack)"
+        echo -e "  2) Volver al menú principal"
+        echo -e "${CYAN}--------------------------------------------------${RESET}"
+        echo -ne "Opción: "
+        read -r fedora_choice
+
+        case "$fedora_choice" in
+            1)
+                "$SCRIPT_DIR/fedora-tools/install_virtualbox.sh" || true
+                ;;
+            2)
                 return 0
                 ;;
             *)
@@ -1106,6 +1134,12 @@ if [ $# -gt 0 ]; then
         --gentoo-tools)
             show_gentoo_tools_menu
             ;;
+        --virtualbox)
+            exec "$SCRIPT_DIR/fedora-tools/install_virtualbox.sh"
+            ;;
+        --fedora-tools)
+            show_fedora_tools_menu
+            ;;
         -h|--help)
             show_help
             ;;
@@ -1120,7 +1154,7 @@ fi
 
 # Ejecución interactiva (sin argumentos)
 check_deps
-
+ 
 while true; do
     show_main_menu
     echo -ne "Opción: "
@@ -1140,12 +1174,15 @@ while true; do
             show_gentoo_tools_menu
             ;;
         5)
-            install_generic || true
+            show_fedora_tools_menu
             ;;
         6)
-            configure_existing || true
+            install_generic || true
             ;;
         7)
+            configure_existing || true
+            ;;
+        8)
             echo "¡Hasta luego!"
             break
             ;;
