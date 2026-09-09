@@ -233,6 +233,33 @@ if [[ "$RESP_EXT" =~ ^([sS][iI]?|[yY][eE]?[sS]?|"")$ ]]; then
     fi
 fi
 
+# 10. Descargar VBoxGuestAdditions.iso (evita fallo de descarga de certificado en GUI)
+log_step "Configurando imagen ISO de Guest Additions..."
+VBOX_VERSION=$(rpm -q --queryformat '%{VERSION}' VirtualBox 2>/dev/null || true)
+if [ -z "$VBOX_VERSION" ]; then
+    VBOX_VERSION=$(VBoxManage -v 2>/dev/null | cut -d 'r' -f 1 || true)
+fi
+
+if [ -n "$VBOX_VERSION" ]; then
+    GUEST_ADD_URL="https://download.virtualbox.org/virtualbox/${VBOX_VERSION}/VBoxGuestAdditions_${VBOX_VERSION}.iso"
+    mkdir -p /usr/share/virtualbox
+    mkdir -p "/home/${REAL_USER}/.config/VirtualBox" 2>/dev/null || true
+
+    if [ ! -f "/usr/share/virtualbox/VBoxGuestAdditions.iso" ]; then
+        log_info "Descargando VBoxGuestAdditions_${VBOX_VERSION}.iso..."
+        if curl -fL "$GUEST_ADD_URL" -o "/usr/share/virtualbox/VBoxGuestAdditions.iso"; then
+            cp "/usr/share/virtualbox/VBoxGuestAdditions.iso" "/home/${REAL_USER}/.config/VirtualBox/VBoxGuestAdditions_${VBOX_VERSION}.iso" 2>/dev/null || true
+            ln -sf "/usr/share/virtualbox/VBoxGuestAdditions.iso" "/home/${REAL_USER}/.config/VirtualBox/VBoxGuestAdditions.iso" 2>/dev/null || true
+            chown -R "${REAL_USER}:${REAL_USER}" "/home/${REAL_USER}/.config/VirtualBox" 2>/dev/null || true
+            log_success "Guest Additions ISO configurado correctamente para las máquinas virtuales."
+        else
+            log_warn "No se pudo descargar automáticamente el Guest Additions ISO."
+        fi
+    else
+        log_success "Guest Additions ISO ya presente en /usr/share/virtualbox/VBoxGuestAdditions.iso."
+    fi
+fi
+
 # 10. Iniciar servicio y cargar módulos
 log_step "Iniciando servicio vboxdrv y cargando módulos..."
 systemctl restart vboxdrv.service 2>/dev/null || true
