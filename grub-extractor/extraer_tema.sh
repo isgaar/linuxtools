@@ -29,6 +29,7 @@ if [ -z "$THEME_FILE" ] || [ ! -f "$THEME_FILE" ]; then
     POSSIBLE_THEMES=(
         "/usr/share/grub/themes/zorin/theme.txt"
         "/boot/grub/themes/zorin/theme.txt"
+        "/boot/grub2/themes/zorin/theme.txt"
     )
     
     for path in "${POSSIBLE_THEMES[@]}"; do
@@ -41,7 +42,7 @@ if [ -z "$THEME_FILE" ] || [ ! -f "$THEME_FILE" ]; then
     
     if [ -z "$THEME_FILE" ] || [ ! -f "$THEME_FILE" ]; then
         # Buscar cualquier archivo theme.txt en rutas comunes de GRUB
-        FOUND_THEME=$(find /usr/share/grub/themes /boot/grub/themes -name "theme.txt" 2>/dev/null | head -n 1)
+        FOUND_THEME=$(find /usr/share/grub/themes /boot/grub/themes /boot/grub2/themes -name "theme.txt" 2>/dev/null | head -n 1)
         if [ -n "$FOUND_THEME" ]; then
             THEME_FILE="$FOUND_THEME"
             echo "Se encontró un tema alternativo en: $THEME_FILE"
