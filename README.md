@@ -24,6 +24,7 @@ También admite ejecución directa:
 ./instalar-apps.sh --pcsx2
 ./instalar-apps.sh --zen-build
 ./instalar-apps.sh --virtualbox   # VirtualBox en Fedora (akmods y Secure Boot)
+./instalar-apps.sh --audio-hifi   # Audio Hi-Fi / Bit-Perfect (192kHz/24bit, PipeWire)
 ./instalar-apps.sh --fedora-tools # Menú de herramientas para Fedora
 ```
 
@@ -42,6 +43,16 @@ para abrirlo al finalizar.
 
 ## Herramientas Fedora
 
+- `fedora-tools/setup_audio_hifi.sh` configura el subsistema de audio en Fedora Linux para lograr **Alta Fidelidad Pura y Bit-Perfect** hasta el límite del hardware (DAC Realtek ALC623 y HDMI):
+  - **Conmutación dinámica de frecuencias (Bit-Perfect)**: Admite de forma nativa `44.1 kHz`, `48.0 kHz`, `88.2 kHz`, `96.0 kHz`, `176.4 kHz` y `192.0 kHz` sin remuestreo forzado.
+  - **Profundidad nativa de 24/32 bits (`S32LE`)**: Aprovecha el rango dinámico completo del hardware (>110 dB) en lugar del estándar recortado de 16 bits.
+  - **Calidad de remuestreo audiófilo nivel 14 (`libsoxr`)**: Interpolación sinc de grado de estudio en caso de flujos concurrentes.
+  - **Cero alteración digital**: Desactiva remezclas destructivas, pseudo-surround y normalizaciones automáticas; fija el volumen digital PCM de ALSA al 100% (0.00 dB).
+  - **Eliminación de pops y latencia**: Desactiva el ahorro de energía agresivo en `snd_hda_intel` (`power_save=0`), manteniendo los osciladores del DAC activos.
+  - **Prioridad en tiempo real**: Configura límites PAM (`rtprio 95`, `memlock unlimited`) para evitar cortes de audio (*xruns*).
+  - **Bluetooth de alta definición**: Habilita SBC-XQ, prioridad LDAC (HQ 990 kbps forzado) y códecs `aptX`/`aptX HD` con RPM Fusion.
+  - **Suite DSP opcional**: Instalación de `EasyEffects` y plugins `LSP` para ecualización paramétrica y corrección acústica.
+  - **Diagnóstico y Rollback**: Monitor en vivo del reloj de hardware y restauración limpia a los valores por defecto de Fedora.
 - `fedora-tools/install_virtualbox.sh` automatiza la instalación y configuración
   completa de VirtualBox en Fedora Linux:
   - Habilita repositorios RPM Fusion (Free y Non-Free).

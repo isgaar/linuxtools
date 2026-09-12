@@ -1017,6 +1017,7 @@ show_help() {
     echo -e "  --zen-build    Compila Zen Browser desde código fuente en el directorio XDG de descargas"
     echo -e "  --gentoo-tools Abre el menú de compilación para Gentoo"
     echo -e "  --virtualbox   Instala/configura VirtualBox en Fedora (RPM Fusion, akmods, Secure Boot)"
+    echo -e "  --audio-hifi, --hifi Configura audio de alta fidelidad (Hi-Fi / Bit-Perfect) en Fedora"
     echo -e "  --fedora-tools Abre el menú de herramientas para Fedora"
     echo -e "  -h, --help      Muestra esta ayuda"
 }
@@ -1041,7 +1042,7 @@ show_main_menu() {
     echo -e "  2) Instalar o Registrar ${BOLD}Antigravity IDE${RESET}"
     echo -e "  3) Instalar o Registrar ${BOLD}VSCodium${RESET}"
     echo -e "  4) Abrir ${BOLD}Herramientas Gentoo${RESET} (compilar PCSX2 o Zen Browser)"
-    echo -e "  5) Abrir ${BOLD}Herramientas Fedora${RESET} (Instalar VirtualBox con Secure Boot)"
+    echo -e "  5) Abrir ${BOLD}Herramientas Fedora${RESET} (VirtualBox, Audio Hi-Fi Bit-Perfect)"
     echo -e "  6) Instalar/Registrar una ${BOLD}Aplicación Genérica${RESET} (.tar.*)"
     echo -e "  7) Configurar accesos directos para carpeta en ${BOLD}/opt/${RESET}"
     echo -e "  8) Salir"
@@ -1083,7 +1084,8 @@ show_fedora_tools_menu() {
         echo -e "${BOLD}${GREEN}              HERRAMIENTAS FEDORA               ${RESET}"
         echo -e "${CYAN}==================================================${RESET}"
         echo -e "  1) Instalar ${BOLD}VirtualBox${RESET} (RPM Fusion, akmods, Secure Boot y Extension Pack)"
-        echo -e "  2) Volver al menú principal"
+        echo -e "  2) Configurar ${BOLD}Audio Hi-Fi / Bit-Perfect${RESET} (192kHz/24-32bit, PipeWire, WirePlumber)"
+        echo -e "  3) Volver al menú principal"
         echo -e "${CYAN}--------------------------------------------------${RESET}"
         echo -ne "Opción: "
         read -r fedora_choice
@@ -1093,6 +1095,9 @@ show_fedora_tools_menu() {
                 "$SCRIPT_DIR/fedora-tools/install_virtualbox.sh" || true
                 ;;
             2)
+                "$SCRIPT_DIR/fedora-tools/setup_audio_hifi.sh" || true
+                ;;
+            3)
                 return 0
                 ;;
             *)
@@ -1136,6 +1141,9 @@ if [ $# -gt 0 ]; then
             ;;
         --virtualbox)
             exec "$SCRIPT_DIR/fedora-tools/install_virtualbox.sh"
+            ;;
+        --audio-hifi|--hifi|--hifi-audio)
+            exec "$SCRIPT_DIR/fedora-tools/setup_audio_hifi.sh"
             ;;
         --fedora-tools)
             show_fedora_tools_menu
