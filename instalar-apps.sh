@@ -1018,6 +1018,7 @@ show_help() {
     echo -e "  --gentoo-tools Abre el menú de compilación para Gentoo"
     echo -e "  --virtualbox   Instala/configura VirtualBox en Fedora (RPM Fusion, akmods, Secure Boot)"
     echo -e "  --audio-hifi, --hifi Configura audio de alta fidelidad (Hi-Fi / Bit-Perfect) en Fedora"
+    echo -e "  --gamepad, --gamepad-patch Parche y soporte de mandos Bluetooth/XInput para Steam y Lutris"
     echo -e "  --fedora-tools Abre el menú de herramientas para Fedora"
     echo -e "  -h, --help      Muestra esta ayuda"
 }
@@ -1085,7 +1086,8 @@ show_fedora_tools_menu() {
         echo -e "${CYAN}==================================================${RESET}"
         echo -e "  1) Instalar ${BOLD}VirtualBox${RESET} (RPM Fusion, akmods, Secure Boot y Extension Pack)"
         echo -e "  2) Configurar ${BOLD}Audio Hi-Fi / Bit-Perfect${RESET} (192kHz/24-32bit, PipeWire, WirePlumber)"
-        echo -e "  3) Volver al menú principal"
+        echo -e "  3) Parche para ${BOLD}Mandos Bluetooth/USB${RESET} (Steam, Lutris, Proton, Wine, XInput)"
+        echo -e "  4) Volver al menú principal"
         echo -e "${CYAN}--------------------------------------------------${RESET}"
         echo -ne "Opción: "
         read -r fedora_choice
@@ -1098,6 +1100,9 @@ show_fedora_tools_menu() {
                 "$SCRIPT_DIR/fedora-tools/setup_audio_hifi.sh" || true
                 ;;
             3)
+                "$SCRIPT_DIR/fedora-tools/setup_gamepad_patch.sh" || true
+                ;;
+            4)
                 return 0
                 ;;
             *)
@@ -1144,6 +1149,9 @@ if [ $# -gt 0 ]; then
             ;;
         --audio-hifi|--hifi|--hifi-audio)
             exec "$SCRIPT_DIR/fedora-tools/setup_audio_hifi.sh"
+            ;;
+        --gamepad|--gamepad-patch|--gamepads)
+            exec "$SCRIPT_DIR/fedora-tools/setup_gamepad_patch.sh"
             ;;
         --fedora-tools)
             show_fedora_tools_menu
