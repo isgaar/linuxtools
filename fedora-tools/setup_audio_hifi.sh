@@ -168,12 +168,13 @@ stream.properties = {
 }
 EOF
 
-    # C) WirePlumber 0.5+: formato S32LE de 24/32 bits, tasas dinámicas completas y acceso directo MMAP
+    # C) WirePlumber 0.5+: soporte Hi-Fi / Bit-Perfect multitarjeta (PCI, USB-C, HDMI)
     local alsa_conf="$WP_BASE/wireplumber.conf.d/50-alsa-hifi.conf"
     log_info "Configurando reglas ALSA en WirePlumber ($alsa_conf)..."
     cat > "$alsa_conf" << 'EOF'
 # WirePlumber 0.5+ ALSA Hardware Direct Hi-Fi / Bit-Perfect Configuration
 monitor.alsa.rules = [
+  # Reglas generales para todas las salidas ALSA (PCI, USB-C, USB DACs, HDMI)
   {
     matches = [
       {
@@ -182,16 +183,26 @@ monitor.alsa.rules = [
     ]
     actions = {
       update-props = {
-        "audio.format"                   = "S32LE"
         "audio.allowed-rates"            = [ 44100 48000 88200 96000 176400 192000 ]
         "resample.quality"               = 14
         "channelmix.upmix"               = false
         "channelmix.normalize"           = false
-        "api.alsa.period-size"           = 1024
-        "api.alsa.headroom"              = 512
         "api.alsa.disable-mmap"          = false
         "api.alsa.disable-batch"         = false
-        "session.suspend-timeout-seconds"= 0
+      }
+    }
+  },
+  # Optimizaciones de buffer de memoria para DACs internos PCI
+  {
+    matches = [
+      {
+        "node.name" = "~alsa_output.pci.*"
+      }
+    ]
+    actions = {
+      update-props = {
+        "api.alsa.period-size"           = 1024
+        "api.alsa.headroom"              = 512
       }
     }
   }
@@ -372,7 +383,7 @@ for i in range(samples):
             local pid=$!
             sleep 0.6
             if command -v pw-top &>/dev/null; then
-                pw-top -b -n 2 | grep -E "(alsa_output.*analog-stereo|FORMAT)" | tail -n 2 || true
+                pw-top -b -n 2 | grep -E "(alsa_output.*analog|FORMAT)" | tail -n 2 || true
             fi
             wait "$pid" 2>/dev/null || true
         fi
