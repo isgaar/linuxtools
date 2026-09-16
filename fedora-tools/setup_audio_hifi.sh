@@ -318,51 +318,54 @@ install_native_spatial_audio() {
         systemctl --user disable easyeffects.service 2>/dev/null || true
     fi
 
-    # 2. Instalar respuesta de impulso HRIR estandarizada
-    local hrir_dir="$REAL_HOME/.local/share/pipewire/hrir"
-    mkdir -p "$hrir_dir"
-    if [ -f "$SCRIPT_DIR/hrir/dolby_atmos_48k.wav" ]; then
-        cp -f "$SCRIPT_DIR/hrir/dolby_atmos_48k.wav" "$hrir_dir/"
-    elif [ -f "$SCRIPT_DIR/presets/irs/Dolby ATMOS ((128K MP3)) 1.Default.irs" ]; then
-        sox "$SCRIPT_DIR/presets/irs/Dolby ATMOS ((128K MP3)) 1.Default.irs" -r 48000 -b 24 "$hrir_dir/dolby_atmos_48k.wav" 2>/dev/null || cp -f "$SCRIPT_DIR/presets/irs/Dolby ATMOS ((128K MP3)) 1.Default.irs" "$hrir_dir/dolby_atmos_48k.wav"
-    fi
-    chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.local/share/pipewire" 2>/dev/null || true
-
-    # 3. Configurar PipeWire Filter-Chain con convolución y biquads
+    # 2. Configurar PipeWire Filter-Chain (Ecualizador de Estudio 10 Bandas + Matriz Mid/Side + Bauer Crossfeed)
     local pw_conf_dir="$REAL_HOME/.config/pipewire/pipewire.conf.d"
     mkdir -p "$pw_conf_dir"
     local template="$SCRIPT_DIR/pipewire/60-native-spatial-audio.conf"
     local target_conf="$pw_conf_dir/60-native-spatial-audio.conf"
 
     if [ -f "$template" ]; then
-        sed "s|@HRIR_PATH@|$hrir_dir/dolby_atmos_48k.wav|g" "$template" > "$target_conf"
+        cp -f "$template" "$target_conf"
     fi
     chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/pipewire" 2>/dev/null || true
 
-    # Si es root, colocar también en /usr/share/pipewire y /etc/pipewire
+    # Si es root, colocar también en /etc/pipewire
     if [ "$EUID" -eq 0 ]; then
-        mkdir -p /usr/share/pipewire/hrir /etc/pipewire/pipewire.conf.d
-        [ -f "$hrir_dir/dolby_atmos_48k.wav" ] && cp -f "$hrir_dir/dolby_atmos_48k.wav" /usr/share/pipewire/hrir/
-        [ -f "$template" ] && sed "s|@HRIR_PATH@|/usr/share/pipewire/hrir/dolby_atmos_48k.wav|g" "$template" > /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf
+        mkdir -p /etc/pipewire/pipewire.conf.d
+        [ -f "$template" ] && cp -f "$template" /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf
     fi
 
-    # 4. Reiniciar servicios de usuario para activar el sink nativo
+    # 3. Reiniciar servicios de usuario para activar el sink nativo
     restart_user_services
 
     sleep 1.5
 
-    # 5. Establecer spatial_audio_sink como el sink predeterminado
-    log_info "Configurando 'spatial_audio_sink' como salida de audio principal..."
+    # 4. Establecer spatial_audio_sink como el sink predeterminado y calibrar volúmenes
+    log_info "Configurando 'spatial_audio_sink' como salida de audio principal y calibrando nivel al 100%..."
     local sink_id
     if [ "$EUID" -eq 0 ]; then
-        sink_id=$(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | grep -E "spatial_audio_sink" | head -n 1 | awk '{print $1}' | tr -d '*.' | xargs)
-        [ -n "$sink_id" ] && sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-default "$sink_id" 2>/dev/null || true
+        sink_id=$(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | grep "spatial_audio_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
+        if [ -n "$sink_id" ]; then
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-default "$sink_id" 2>/dev/null || true
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
+        fi
+        # Maximizar volumen físico del hardware para evitar doble atenuación
+        for hw_sink in $(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
+        done
     else
-        sink_id=$(wpctl status 2>/dev/null | grep -E "spatial_audio_sink" | head -n 1 | awk '{print $1}' | tr -d '*.' | xargs)
-        [ -n "$sink_id" ] && wpctl set-default "$sink_id" 2>/dev/null || true
+        sink_id=$(wpctl status 2>/dev/null | grep "spatial_audio_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
+        if [ -n "$sink_id" ]; then
+            wpctl set-default "$sink_id" 2>/dev/null || true
+            wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
+        fi
+        # Maximizar volumen físico del hardware para evitar doble atenuación
+        for hw_sink in $(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
+            wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
+        done
     fi
 
-    log_success "¡Audio Espacial Nativo activado en PipeWire! El sonido se procesa directamente en C dentro del servidor de audio sin intermediarios."
+    log_success "¡Audio Espacial Nativo activado en PipeWire! Sonido de estudio cristalino, amplio y a volumen completo sin intermediarios."
 }
 
 # 5. Instalar y Configurar Suite DSP Alternativa (EasyEffects Opcional)

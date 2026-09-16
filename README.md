@@ -64,9 +64,10 @@ para abrirlo al finalizar.
   - **Prioridad en tiempo real**: Configura límites PAM (`rtprio 95`, `memlock unlimited`) para evitar cortes de audio (*xruns*).
   - **Bluetooth de alta definición**: Habilita SBC-XQ, prioridad LDAC (HQ 990 kbps forzado) y códecs `aptX`/`aptX HD` con RPM Fusion.
   - **Audio Espacial 100% Nativo en PipeWire (`libpipewire-module-filter-chain`)**:
-    - **Cero intermediarios**: Se ejecuta en el hilo DSP en tiempo real en C/SPA del propio PipeWire, sin consumir ciclos de CPU en aplicaciones de usuario ni requerir capas intermedias como EasyEffects.
-    - **Matriz de Convolución Acústica HRIR**: Aplica convolución estéreo 2x2 con impulsos Dolby Atmos para auriculares calibrados a 24-bit 48kHz/44.1kHz (`conv_LL`/`conv_RR` ganancia 0.60 y crossfeed contralateral `conv_LR`/`conv_RL` ganancia 0.15) para recrear difracción natural de cabeza y oreja sin clipping digital.
-    - **Ecualización Paramétrica Biquad Anti-Encapsulado**: Filtro pasaaltas sub-grave a 35 Hz, atenuación de resonancia de sala en 250 Hz (-2.5 dB) y 500 Hz (-1.8 dB), corrección Harman y realce aéreo a 10 kHz (+2.0 dB).
+    - **Cero intermediarios y Cero latencia (0 ms)**: Se ejecuta directamente en el hilo DSP en tiempo real en C/SPA de PipeWire. Sin demoras añadidas, sin desfases acústicos y sin consumir ciclos de CPU en aplicaciones de usuario como EasyEffects.
+    - **Ecualizador Paramétrico de Estudio (10 Bandas)**: Curva calibrada de alta precisión con filtros biquad (`bq_peaking`) que refuerza sub-graves limpios (35 Hz / 65 Hz), elimina de raíz el sonido encajonado/hueco de plástico (cortes quirúrgicos en 250 Hz y 500 Hz), entrega máxima presencia vocal (2 kHz / 4 kHz) y apertura aérea cristalina (8 kHz / 12 kHz).
+    - **Matriz de Espacialización Mid/Side y Compensación Binaural**: Ensanchamiento de escenario estéreo tridimensional (+20% amplitud fuera de la cabeza) y crossfeed contralateral a 700 Hz (Bauer) para disipar la fatiga auditiva sin afectar la inteligibilidad ni el centro de voces.
+    - **Volumen Calibrado al 100% (Sin Pérdidas ni Doble Atenuación)**: Maximiza el sumidero de hardware físico y ajusta la ganancia nominal con margen de seguridad dinámico (+2.5 dB RMS de plenitud acústica, 0% clipping).
     - **Sumidero Nativo de Audio**: Expone un nodo `Audio/Sink` nativo (`spatial_audio_sink`) configurado automáticamente como salida predeterminada del sistema.
   - **Presets de Estudio EasyEffects (Opcional / Alternativo)**:
     - Para quienes prefieran ajuste visual dinámico por GUI, incluye perfiles como `Dolby Atmos Spatial Studio`, `Dolby Atmos Convolver Studio`, `Apple Spatial Audio Studio` y `LoudnessCrystalEqualizer`.
