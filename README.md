@@ -25,7 +25,8 @@ También admite ejecución directa:
 ./instalar-apps.sh --zen-build
 ./instalar-apps.sh --virtualbox   # VirtualBox en Fedora (akmods y Secure Boot)
 ./instalar-apps.sh --audio-hifi   # Audio Hi-Fi / Bit-Perfect (192kHz/24bit, PipeWire)
-./instalar-apps.sh --spatial      # Audio Espacial / Dolby Atmos (elimina sonido encapsulado)
+./instalar-apps.sh --spatial      # Audio Espacial Nativo PipeWire (C/SPA, convolución HRIR, sin intermediarios)
+./instalar-apps.sh --easyeffects  # Audio Espacial alternativo mediante EasyEffects (GUI dinámico)
 ./instalar-apps.sh --gamepad      # Parche mandos Bluetooth/XInput (Steam, Lutris, Proton)
 ./instalar-apps.sh --fedora-tools # Menú de herramientas para Fedora
 ```
@@ -62,10 +63,14 @@ para abrirlo al finalizar.
   - **Eliminación de pops y latencia**: Desactiva el ahorro de energía agresivo en `snd_hda_intel` (`power_save=0`), manteniendo los osciladores del DAC activos.
   - **Prioridad en tiempo real**: Configura límites PAM (`rtprio 95`, `memlock unlimited`) para evitar cortes de audio (*xruns*).
   - **Bluetooth de alta definición**: Habilita SBC-XQ, prioridad LDAC (HQ 990 kbps forzado) y códecs `aptX`/`aptX HD` con RPM Fusion.
-  - **Audio Espacial y Dolby Atmos / Soundstage (estilo macOS/Windows)**: Resuelve el sonido encapsulado mediante convolución acústica HRIR, micro-reflexiones tempranas de sala tratada, crossfeed binaural (Bauer bs2b a 700 Hz / 4.5 dB), ensanchamiento estéreo Mid/Side (+25% anchura y +1.8 dB laterales) y excitación armónica (Crystalizer).
-  - **Presets de Estudio e IRS Acústicos**: Incluye perfiles calibrados y libres de distorsión como `Dolby Atmos Spatial Studio` (crossfeed y ensanchamiento dinámico), `Dolby Atmos Convolver Studio` (convolución HRIR con respuesta de cine), `Apple Spatial Audio Studio` (reflexiones tempranas de sala acústica al estilo macOS), `LoudnessCrystalEqualizer`, y respuestas al impulso (IRS) de Dolby Atmos, Waves MaxxAudio y Razer Surround.
-  - **Servicio transparente en segundo plano**: Daemon nativo `systemd --user` (`easyeffects.service`) sin ventanas abiertas obligatorias.
-  - **Diagnóstico y Rollback**: Monitor en vivo del reloj de hardware y restauración limpia a los valores por defecto de Fedora.
+  - **Audio Espacial 100% Nativo en PipeWire (`libpipewire-module-filter-chain`)**:
+    - **Cero intermediarios**: Se ejecuta en el hilo DSP en tiempo real en C/SPA del propio PipeWire, sin consumir ciclos de CPU en aplicaciones de usuario ni requerir capas intermedias como EasyEffects.
+    - **Matriz de Convolución Acústica HRIR**: Aplica convolución estéreo 2x2 con impulsos Dolby Atmos para auriculares calibrados a 24-bit 48kHz/44.1kHz (`conv_LL`/`conv_RR` ganancia 0.60 y crossfeed contralateral `conv_LR`/`conv_RL` ganancia 0.15) para recrear difracción natural de cabeza y oreja sin clipping digital.
+    - **Ecualización Paramétrica Biquad Anti-Encapsulado**: Filtro pasaaltas sub-grave a 35 Hz, atenuación de resonancia de sala en 250 Hz (-2.5 dB) y 500 Hz (-1.8 dB), corrección Harman y realce aéreo a 10 kHz (+2.0 dB).
+    - **Sumidero Nativo de Audio**: Expone un nodo `Audio/Sink` nativo (`spatial_audio_sink`) configurado automáticamente como salida predeterminada del sistema.
+  - **Presets de Estudio EasyEffects (Opcional / Alternativo)**:
+    - Para quienes prefieran ajuste visual dinámico por GUI, incluye perfiles como `Dolby Atmos Spatial Studio`, `Dolby Atmos Convolver Studio`, `Apple Spatial Audio Studio` y `LoudnessCrystalEqualizer`.
+  - **Diagnóstico y Rollback**: Monitor en vivo del reloj de hardware, sumideros y restauración limpia a los valores por defecto de Fedora.
 - `fedora-tools/install_virtualbox.sh` automatiza la instalación y configuración
   completa de VirtualBox en Fedora Linux:
   - Habilita repositorios RPM Fusion (Free y Non-Free).

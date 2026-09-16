@@ -304,7 +304,68 @@ EOF
     log_success "¡Bluetooth de Alta Fidelidad configurado con éxito!"
 }
 
-# 4. Instalar y Configurar Suite DSP de Audio Espacial (EasyEffects & Dolby/DTS/macOS Presets)
+# 4. Instalar y Configurar Audio Espacial 100% Nativo en PipeWire (Sin Intermediarios / Filter-Chain)
+install_native_spatial_audio() {
+    log_step "Configurando Audio Espacial 100% Nativo en PipeWire (Cero Intermediarios)..."
+
+    # 1. Asegurar que EasyEffects quede detenido y deshabilitado para evitar intermediarios
+    log_info "Desactivando intermediarios (EasyEffects)..."
+    if [ "$EUID" -eq 0 ]; then
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" systemctl --user stop easyeffects.service 2>/dev/null || true
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" systemctl --user disable easyeffects.service 2>/dev/null || true
+    else
+        systemctl --user stop easyeffects.service 2>/dev/null || true
+        systemctl --user disable easyeffects.service 2>/dev/null || true
+    fi
+
+    # 2. Instalar respuesta de impulso HRIR estandarizada
+    local hrir_dir="$REAL_HOME/.local/share/pipewire/hrir"
+    mkdir -p "$hrir_dir"
+    if [ -f "$SCRIPT_DIR/hrir/dolby_atmos_48k.wav" ]; then
+        cp -f "$SCRIPT_DIR/hrir/dolby_atmos_48k.wav" "$hrir_dir/"
+    elif [ -f "$SCRIPT_DIR/presets/irs/Dolby ATMOS ((128K MP3)) 1.Default.irs" ]; then
+        sox "$SCRIPT_DIR/presets/irs/Dolby ATMOS ((128K MP3)) 1.Default.irs" -r 48000 -b 24 "$hrir_dir/dolby_atmos_48k.wav" 2>/dev/null || cp -f "$SCRIPT_DIR/presets/irs/Dolby ATMOS ((128K MP3)) 1.Default.irs" "$hrir_dir/dolby_atmos_48k.wav"
+    fi
+    chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.local/share/pipewire" 2>/dev/null || true
+
+    # 3. Configurar PipeWire Filter-Chain con convolución y biquads
+    local pw_conf_dir="$REAL_HOME/.config/pipewire/pipewire.conf.d"
+    mkdir -p "$pw_conf_dir"
+    local template="$SCRIPT_DIR/pipewire/60-native-spatial-audio.conf"
+    local target_conf="$pw_conf_dir/60-native-spatial-audio.conf"
+
+    if [ -f "$template" ]; then
+        sed "s|@HRIR_PATH@|$hrir_dir/dolby_atmos_48k.wav|g" "$template" > "$target_conf"
+    fi
+    chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/pipewire" 2>/dev/null || true
+
+    # Si es root, colocar también en /usr/share/pipewire y /etc/pipewire
+    if [ "$EUID" -eq 0 ]; then
+        mkdir -p /usr/share/pipewire/hrir /etc/pipewire/pipewire.conf.d
+        [ -f "$hrir_dir/dolby_atmos_48k.wav" ] && cp -f "$hrir_dir/dolby_atmos_48k.wav" /usr/share/pipewire/hrir/
+        [ -f "$template" ] && sed "s|@HRIR_PATH@|/usr/share/pipewire/hrir/dolby_atmos_48k.wav|g" "$template" > /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf
+    fi
+
+    # 4. Reiniciar servicios de usuario para activar el sink nativo
+    restart_user_services
+
+    sleep 1.5
+
+    # 5. Establecer spatial_audio_sink como el sink predeterminado
+    log_info "Configurando 'spatial_audio_sink' como salida de audio principal..."
+    local sink_id
+    if [ "$EUID" -eq 0 ]; then
+        sink_id=$(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | grep -E "spatial_audio_sink" | head -n 1 | awk '{print $1}' | tr -d '*.' | xargs)
+        [ -n "$sink_id" ] && sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-default "$sink_id" 2>/dev/null || true
+    else
+        sink_id=$(wpctl status 2>/dev/null | grep -E "spatial_audio_sink" | head -n 1 | awk '{print $1}' | tr -d '*.' | xargs)
+        [ -n "$sink_id" ] && wpctl set-default "$sink_id" 2>/dev/null || true
+    fi
+
+    log_success "¡Audio Espacial Nativo activado en PipeWire! El sonido se procesa directamente en C dentro del servidor de audio sin intermediarios."
+}
+
+# 5. Instalar y Configurar Suite DSP Alternativa (EasyEffects Opcional)
 install_dsp_suite() {
     log_step "Instalando y Configurando Suite DSP de Audio Espacial (Dolby Atmos & Soundstage)..."
 
@@ -467,6 +528,7 @@ restore_defaults() {
 
     # Eliminar configuraciones de usuario
     rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/99-hires-audio.conf"
+    rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/60-native-spatial-audio.conf"
     rm -f "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf"
     rm -f "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-alsa-hifi.conf"
     rm -f "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf"
@@ -474,6 +536,7 @@ restore_defaults() {
     # Si es root, eliminar también las de sistema
     if [ "$EUID" -eq 0 ]; then
         rm -f /etc/pipewire/pipewire.conf.d/99-hires-audio.conf
+        rm -f /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf
         rm -f /etc/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf
         rm -f /etc/wireplumber/wireplumber.conf.d/50-alsa-hifi.conf
         rm -f /etc/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf
@@ -500,12 +563,13 @@ show_menu() {
         echo -e "Selecciona una opción:"
         echo -e "  1) ${GREEN}${BOLD}Activar Núcleo Hi-Fi Bit-Perfect${NC} (44.1k-192k nativo, 24/32bit S32LE, soxr 14)"
         echo -e "  2) ${CYAN}Configurar Bluetooth Hi-Fi${NC} (LDAC HQ 990kbps, SBC-XQ, aptX)"
-        echo -e "  3) ${BLUE}Activar Audio Espacial / Dolby Atmos${NC} (Soundstage abierto, Crossfeed, Crystalizer, estilo macOS/Win)"
-        echo -e "  4) ${YELLOW}${BOLD}Instalación Completa${NC} (Núcleo Hi-Fi + Bluetooth Hi-Fi + Audio Espacial)"
-        echo -e "  5) Ver ${BOLD}Diagnóstico de Estado y Hardware${NC}"
-        echo -e "  6) Ejecutar ${BOLD}Prueba de Conmutación Bit-Perfect${NC}"
-        echo -e "  7) ${RED}Restaurar configuración de fábrica (Rollback)${NC}"
-        echo -e "  8) Salir"
+        echo -e "  3) ${GREEN}${BOLD}Activar Audio Espacial Nativo en PipeWire${NC} (Sin intermediarios, Dolby Atmos HRIR + Biquads)"
+        echo -e "  4) ${BLUE}Alternar a Suite DSP EasyEffects${NC} (Modo aplicación opcional)"
+        echo -e "  5) ${YELLOW}${BOLD}Instalación Completa${NC} (Núcleo Hi-Fi + Bluetooth Hi-Fi + Audio Espacial Nativo)"
+        echo -e "  6) Ver ${BOLD}Diagnóstico de Estado y Hardware${NC}"
+        echo -e "  7) Ejecutar ${BOLD}Prueba de Conmutación Bit-Perfect${NC}"
+        echo -e "  8) ${RED}Restaurar configuración de fábrica (Rollback)${NC}"
+        echo -e "  9) Salir"
         echo -e "${CYAN}------------------------------------------------------${NC}"
         echo -ne "Opción: "
         read -r choice
@@ -518,23 +582,26 @@ show_menu() {
                 install_bluetooth_hifi
                 ;;
             3)
-                install_dsp_suite
+                install_native_spatial_audio
                 ;;
             4)
-                install_core_hifi
-                install_bluetooth_hifi
                 install_dsp_suite
                 ;;
             5)
-                show_status
+                install_core_hifi
+                install_bluetooth_hifi
+                install_native_spatial_audio
                 ;;
             6)
-                run_bitperfect_test
+                show_status
                 ;;
             7)
-                restore_defaults
+                run_bitperfect_test
                 ;;
             8)
+                restore_defaults
+                ;;
+            9)
                 echo "¡Hasta luego!"
                 exit 0
                 ;;
@@ -556,13 +623,16 @@ if [ $# -gt 0 ]; then
         -b|--bluetooth)
             install_bluetooth_hifi
             ;;
-        -e|--easyeffects|--dsp|--spatial|--dolby)
+        -n|--native-spatial|--spatial|--dolby)
+            install_native_spatial_audio
+            ;;
+        -e|--easyeffects|--dsp)
             install_dsp_suite
             ;;
         -a|--all)
             install_core_hifi
             install_bluetooth_hifi
-            install_dsp_suite
+            install_native_spatial_audio
             ;;
         -s|--status)
             show_status
@@ -576,14 +646,15 @@ if [ $# -gt 0 ]; then
         -h|--help)
             echo "Uso: $0 [opción]"
             echo "Opciones:"
-            echo "  -i, --install      Activa el núcleo Hi-Fi Bit-Perfect (192kHz/24-32bit, soxr, ALSA)"
-            echo "  -b, --bluetooth    Configura Bluetooth de alta fidelidad (LDAC HQ, SBC-XQ, aptX)"
-            echo "  -e, --spatial      Activa Audio Espacial / Dolby Atmos (EasyEffects, Soundstage, Crossfeed)"
-            echo "  -a, --all          Instala todo (Hi-Fi + Bluetooth + Audio Espacial)"
-            echo "  -s, --status       Muestra el estado y diagnóstico del hardware"
-            echo "  -t, --test         Ejecuta la prueba de conmutación de frecuencias Bit-Perfect"
-            echo "  -r, --restore      Restaura las configuraciones de fábrica"
-            echo "  -h, --help         Muestra esta ayuda"
+            echo "  -i, --install         Activa el núcleo Hi-Fi Bit-Perfect (192kHz/24-32bit, soxr, ALSA)"
+            echo "  -b, --bluetooth       Configura Bluetooth de alta fidelidad (LDAC HQ, SBC-XQ, aptX)"
+            echo "  -n, --spatial, --dolby Activa Audio Espacial Nativo en PipeWire (Sin intermediarios)"
+            echo "  -e, --easyeffects     Instala la Suite DSP alternativa EasyEffects"
+            echo "  -a, --all             Instala todo (Hi-Fi + Bluetooth + Audio Espacial Nativo)"
+            echo "  -s, --status          Muestra el estado y diagnóstico del hardware"
+            echo "  -t, --test            Ejecuta la prueba de conmutación de frecuencias Bit-Perfect"
+            echo "  -r, --restore         Restaura las configuraciones de fábrica"
+            echo "  -h, --help            Muestra esta ayuda"
             exit 0
             ;;
         *)
