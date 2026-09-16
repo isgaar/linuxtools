@@ -1018,7 +1018,7 @@ show_help() {
     echo -e "  --gentoo-tools Abre el menú de compilación para Gentoo"
     echo -e "  --virtualbox   Instala/configura VirtualBox en Fedora (RPM Fusion, akmods, Secure Boot)"
     echo -e "  --audio-hifi, --hifi Configura audio de alta fidelidad (Hi-Fi / Bit-Perfect) en Fedora"
-    echo -e "  --spatial, --dolby, --native-spatial Activa Audio Espacial Nativo en PipeWire (Dolby Atmos HRIR, sin intermediarios)"
+    echo -e "  --spatial, --dolby, --native-spatial Activa Audio Espacial Nativo en PipeWire (C/SPA, 0 ms latencia, sin intermediarios)"
     echo -e "  --gamepad, --gamepad-patch Parche y soporte de mandos Bluetooth/XInput para Steam y Lutris"
     echo -e "  --fedora-tools Abre el menú de herramientas para Fedora"
     echo -e "  -h, --help      Muestra esta ayuda"
@@ -1044,7 +1044,7 @@ show_main_menu() {
     echo -e "  2) Instalar o Registrar ${BOLD}Antigravity IDE${RESET}"
     echo -e "  3) Instalar o Registrar ${BOLD}VSCodium${RESET}"
     echo -e "  4) Abrir ${BOLD}Herramientas Gentoo${RESET} (compilar PCSX2 o Zen Browser)"
-    echo -e "  5) Abrir ${BOLD}Herramientas Fedora${RESET} (VirtualBox, Audio Hi-Fi Bit-Perfect)"
+    echo -e "  5) Abrir ${BOLD}Herramientas Fedora${RESET} (VirtualBox, Audio Hi-Fi, Parche Mandos)"
     echo -e "  6) Instalar/Registrar una ${BOLD}Aplicación Genérica${RESET} (.tar.*)"
     echo -e "  7) Configurar accesos directos para carpeta en ${BOLD}/opt/${RESET}"
     echo -e "  8) Salir"
@@ -1085,8 +1085,8 @@ show_fedora_tools_menu() {
         echo -e "\n${CYAN}==================================================${RESET}"
         echo -e "${BOLD}${GREEN}              HERRAMIENTAS FEDORA               ${RESET}"
         echo -e "${CYAN}==================================================${RESET}"
-        echo -e "  1) Instalar ${BOLD}VirtualBox${RESET} (RPM Fusion, akmods, Secure Boot y Extension Pack)"
-        echo -e "  2) Configurar ${BOLD}Audio Hi-Fi / Bit-Perfect${RESET} (192kHz/24-32bit, PipeWire, WirePlumber)"
+        echo -e "  1) Instalar ${BOLD}VirtualBox${RESET} (akmods, Secure Boot, Extension Pack)"
+        echo -e "  2) Configurar ${BOLD}Audio Hi-Fi / Bit-Perfect${RESET} & Audio Espacial Nativo"
         echo -e "  3) Parche para ${BOLD}Mandos Bluetooth/USB${RESET} (Steam, Lutris, Proton, Wine, XInput)"
         echo -e "  4) Volver al menú principal"
         echo -e "${CYAN}--------------------------------------------------${RESET}"
@@ -1137,19 +1137,23 @@ if [ $# -gt 0 ]; then
             install_vscodium
             ;;
         --pcsx2)
-            exec "$SCRIPT_DIR/gentoo-tools/pcsx2.sh"
+            shift
+            exec "$SCRIPT_DIR/gentoo-tools/pcsx2.sh" "$@"
             ;;
         --zen-build)
-            exec "$SCRIPT_DIR/gentoo-tools/zen-browser.sh"
+            shift
+            exec "$SCRIPT_DIR/gentoo-tools/zen-browser.sh" "$@"
             ;;
         --gentoo-tools)
             show_gentoo_tools_menu
             ;;
         --virtualbox)
-            exec "$SCRIPT_DIR/fedora-tools/install_virtualbox.sh"
+            shift
+            exec "$SCRIPT_DIR/fedora-tools/install_virtualbox.sh" "$@"
             ;;
         --audio-hifi|--hifi|--hifi-audio)
-            exec "$SCRIPT_DIR/fedora-tools/setup_audio_hifi.sh"
+            shift
+            exec "$SCRIPT_DIR/fedora-tools/setup_audio_hifi.sh" "$@"
             ;;
         --spatial|--dolby|--audio-spatial|--native-spatial)
             exec "$SCRIPT_DIR/fedora-tools/setup_audio_hifi.sh" --spatial
@@ -1158,7 +1162,8 @@ if [ $# -gt 0 ]; then
             exec "$SCRIPT_DIR/fedora-tools/setup_audio_hifi.sh" --easyeffects
             ;;
         --gamepad|--gamepad-patch|--gamepads)
-            exec "$SCRIPT_DIR/fedora-tools/setup_gamepad_patch.sh"
+            shift
+            exec "$SCRIPT_DIR/fedora-tools/setup_gamepad_patch.sh" "$@"
             ;;
         --fedora-tools)
             show_fedora_tools_menu

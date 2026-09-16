@@ -25,6 +25,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+RESET='\033[0m'
 NC='\033[0m' # Sin color
 
 # Funciones de salida formateada
@@ -47,6 +48,17 @@ log_error() {
 log_step() {
     echo -e "\n${CYAN}${BOLD}==>${NC} ${BOLD}$1${NC}"
 }
+
+# 0. Soporte para ayuda CLI antes de escalar privilegios
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "Uso: $0 [opción]"
+    echo "Instala y configura VirtualBox de forma integral en Fedora Linux (RPM Fusion, akmods, Secure Boot)."
+    echo ""
+    echo "Opciones:"
+    echo "  -i, --install, --all  Ejecuta la instalación completa de VirtualBox"
+    echo "  -h, --help            Muestra esta ayuda"
+    exit 0
+fi
 
 # 1. Comprobar permisos de superusuario
 if [ "$EUID" -ne 0 ]; then

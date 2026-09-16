@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-#
 # ==============================================================================
 # Script de Parche y Optimización de Mandos (Bluetooth & USB) para Fedora Linux
 # Compatible con Steam, Lutris, Wine, Proton y Emuladores
@@ -27,7 +26,9 @@
 
 set -eo pipefail
 
-# Colores y estilos de terminal
+# ==============================================================================
+# 1. ESTILOS Y FUNCIONES DE REGISTRO (LOGGING)
+# ==============================================================================
 BOLD='\033[1m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -35,37 +36,38 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
+RESET='\033[0m'
 NC='\033[0m'
 
-# Funciones de registro
 log_info() {
-    echo -e "${BLUE}${BOLD}[INFO]${NC} $1"
+    echo -e "${BLUE}${BOLD}[INFO]${RESET} $1"
 }
 
 log_success() {
-    echo -e "${GREEN}${BOLD}[OK]${NC} $1"
+    echo -e "${GREEN}${BOLD}[OK]${RESET} $1"
 }
 
 log_warn() {
-    echo -e "${YELLOW}${BOLD}[AVISO]${NC} $1"
+    echo -e "${YELLOW}${BOLD}[AVISO]${RESET} $1"
 }
 
 log_error() {
-    echo -e "${RED}${BOLD}[ERROR]${NC} $1" >&2
+    echo -e "${RED}${BOLD}[ERROR]${RESET} $1" >&2
 }
 
 log_step() {
-    echo -e "\n${CYAN}${BOLD}==>${NC} ${BOLD}$1${NC}"
+    echo -e "\n${CYAN}${BOLD}==>${RESET} ${BOLD}$1${RESET}"
 }
 
-# Detectar usuario real
+# ==============================================================================
+# 2. DETECCIÓN DE USUARIO Y VALIDACIÓN DE ENTORNO
+# ==============================================================================
 REAL_USER="${SUDO_USER:-$USER}"
 if [ "$REAL_USER" = "root" ]; then
     REAL_USER=$(logname 2>/dev/null || who | awk '{print $1}' | head -n 1 || echo "ismael")
 fi
 REAL_HOME=$(eval echo "~$REAL_USER")
 
-# Validar que estamos en Fedora
 validate_system() {
     if [ ! -f /etc/os-release ]; then
         log_error "No se pudo identificar la distribución (/etc/os-release ausente)."
@@ -82,7 +84,10 @@ validate_system() {
     fi
 }
 
-# 1. Aplicar variables de entorno de sesión de usuario (~/.config/environment.d)
+# ==============================================================================
+# 3. PARCHES A NIVEL DE USUARIO (SESIÓN Y PROTON/WINE)
+# ==============================================================================
+# 3.1 Variables de entorno de sesión (~/.config/environment.d)
 apply_user_environment() {
     log_step "1. Configurando variables de entorno para Proton, Wine y Lutris"
 
@@ -109,7 +114,7 @@ EOF
     log_success "Variables de entorno de usuario configuradas correctamente."
 }
 
-# 2. Parchear configuraciones de juegos en Lutris
+# 3.2 Parches para configuraciones de juegos y runner en Lutris
 apply_lutris_patch() {
     log_step "2. Parcheando configuraciones de Lutris para mapeo XInput"
 
@@ -189,11 +194,12 @@ EOF
     log_success "Lutris actualizado con soporte para mandos Sony XInput ($patched_count juegos actualizados)."
 }
 
-# 3. Reglas udev del sistema, uinput y compatibilidad Bluetooth
+# ==============================================================================
+# 4. PARCHES A NIVEL DE SISTEMA Y KERNEL (REQUIERE PRIVILEGIOS DE ROOT)
+# ==============================================================================
 apply_system_fixes() {
     log_step "3. Verificando paquetes y reglas del sistema (udev, uinput, bluetooth)"
 
-    # Comprobar privilegios de root para esta sección
     local need_sudo=0
     if [ "$EUID" -ne 0 ]; then
         log_info "Se requieren permisos de administrador (sudo) para las reglas del sistema..."
@@ -205,7 +211,7 @@ apply_system_fixes() {
         run_cmd="sudo"
     fi
 
-    # 3.1 Instalar steam-devices si no está presente
+    # 4.1 Instalar steam-devices si no está presente (reglas udev para mandos)
     if ! rpm -q steam-devices &>/dev/null; then
         log_info "Instalando paquete 'steam-devices' (reglas udev para mandos)..."
         $run_cmd dnf install -y steam-devices || log_warn "No se pudo instalar steam-devices automáticamente con dnf."
@@ -213,12 +219,12 @@ apply_system_fixes() {
         log_success "Paquete 'steam-devices' ya instalado en el sistema."
     fi
 
-    # 3.2 Cargar módulo uinput automáticamente
+    # 4.2 Cargar módulo uinput automáticamente
     log_info "Asegurando carga del módulo de kernel 'uinput'..."
     echo "uinput" | $run_cmd tee /etc/modules-load.d/uinput.conf > /dev/null
     $run_cmd modprobe uinput || true
 
-    # 3.3 Desactivar ERTM para mandos Bluetooth de Xbox (evita desconexiones infinitas)
+    # 4.3 Desactivar ERTM para mandos Bluetooth de Xbox (evita desconexiones infinitas)
     log_info "Configurando desactivación de ERTM para mandos Bluetooth..."
     cat << 'EOF' | $run_cmd tee /etc/modprobe.d/bluetooth-ertm.conf > /dev/null
 # Desactiva Enhanced Re-Transmission Mode para permitir emparejamiento estable de mandos Xbox
@@ -230,14 +236,16 @@ EOF
         echo 1 | $run_cmd tee /sys/module/bluetooth/parameters/disable_ertm > /dev/null || true
     fi
 
-    # Recargar reglas udev
+    # 4.4 Recargar reglas udev
     $run_cmd udevadm control --reload-rules || true
     $run_cmd udevadm trigger || true
 
     log_success "Reglas del sistema y módulos de kernel aplicados correctamente."
 }
 
-# 4. Mostrar recomendaciones de configuración para Steam
+# ==============================================================================
+# 5. RECOMENDACIONES DE CONFIGURACIÓN PARA STEAM
+# ==============================================================================
 show_steam_recommendations() {
     log_step "4. Recomendaciones para Steam y Steam Input"
 
@@ -254,7 +262,10 @@ show_steam_recommendations() {
     echo -e "${CYAN}--------------------------------------------------${RESET}"
 }
 
-# 5. Diagnóstico de mandos conectados
+# ==============================================================================
+# 6. HERRAMIENTAS DE DIAGNÓSTICO Y MONITOR EN VIVO
+# ==============================================================================
+# 6.1 Diagnóstico de dispositivos conectados
 diagnose_controllers() {
     log_step "Diagnóstico de Mandos Conectados"
 
@@ -312,7 +323,7 @@ except Exception as e:
     echo ""
 }
 
-# 6. Prueba interactiva de eventos en vivo
+# 6.2 Prueba interactiva de eventos en vivo
 test_live_controller() {
     log_step "Prueba Interactiva en Vivo (3 segundos de lectura de eventos)"
     echo -e "Presiona botones o mueve las palancas en tu mando ahora...\n"
@@ -345,7 +356,9 @@ except Exception as e:
 " 2>/dev/null || true
 }
 
-# 7. Revertir cambios (Rollback)
+# ==============================================================================
+# 7. FUNCIÓN DE REVERSIÓN LIMPIA (ROLLBACK)
+# ==============================================================================
 restore_defaults() {
     log_step "Restaurando configuraciones originales..."
 
@@ -371,7 +384,9 @@ restore_defaults() {
     log_success "Configuraciones revertidas. Es recomendable reiniciar la sesión o el equipo."
 }
 
-# Menú interactivo
+# ==============================================================================
+# 8. MENÚ INTERACTIVO Y ENTRADA PRINCIPAL
+# ==============================================================================
 show_menu() {
     while true; do
         echo -e "\n${CYAN}==============================================================${RESET}"
@@ -423,9 +438,10 @@ show_menu() {
     done
 }
 
-# Punto de entrada
+# Validar sistema operativo
 validate_system
 
+# Parseo de argumentos de línea de comandos (CLI)
 if [ $# -gt 0 ]; then
     case "$1" in
         -a|--all|--apply|--install)

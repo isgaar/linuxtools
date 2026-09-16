@@ -29,6 +29,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
+RESET='\033[0m'
 NC='\033[0m'
 
 # Funciones de registro
@@ -566,7 +567,7 @@ show_menu() {
         echo -e "Selecciona una opción:"
         echo -e "  1) ${GREEN}${BOLD}Activar Núcleo Hi-Fi Bit-Perfect${NC} (44.1k-192k nativo, 24/32bit S32LE, soxr 14)"
         echo -e "  2) ${CYAN}Configurar Bluetooth Hi-Fi${NC} (LDAC HQ 990kbps, SBC-XQ, aptX)"
-        echo -e "  3) ${GREEN}${BOLD}Activar Audio Espacial Nativo en PipeWire${NC} (Sin intermediarios, Dolby Atmos HRIR + Biquads)"
+        echo -e "  3) ${GREEN}${BOLD}Activar Audio Espacial Nativo en PipeWire${NC} (Sin intermediarios, 10 Bandas Estudio + Mid/Side + Bauer)"
         echo -e "  4) ${BLUE}Alternar a Suite DSP EasyEffects${NC} (Modo aplicación opcional)"
         echo -e "  5) ${YELLOW}${BOLD}Instalación Completa${NC} (Núcleo Hi-Fi + Bluetooth Hi-Fi + Audio Espacial Nativo)"
         echo -e "  6) Ver ${BOLD}Diagnóstico de Estado y Hardware${NC}"
