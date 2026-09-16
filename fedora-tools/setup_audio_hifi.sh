@@ -52,7 +52,8 @@ log_step() {
     echo -e "\n${CYAN}${BOLD}==>${NC} ${BOLD}$1${NC}"
 }
 
-# Detectar usuario real
+# Detectar usuario real y directorio del script
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REAL_USER="${SUDO_USER:-$USER}"
 if [ "$REAL_USER" = "root" ]; then
     REAL_USER=$(logname 2>/dev/null || who | awk '{print $1}' | head -n 1 || echo "ismael")
@@ -303,20 +304,86 @@ EOF
     log_success "¡Bluetooth de Alta Fidelidad configurado con éxito!"
 }
 
-# 4. Instalar EasyEffects y plugins de ecualización de estudio
+# 4. Instalar y Configurar Suite DSP de Audio Espacial (EasyEffects & Dolby/DTS/macOS Presets)
 install_dsp_suite() {
-    log_step "Instalando Suite DSP de Estudio (EasyEffects & LSP-Plugins)..."
-    if [ "$EUID" -eq 0 ]; then
-        dnf install -y easyeffects lsp-plugins || log_warn "Aviso al instalar EasyEffects mediante dnf."
-    else
-        if command -v sudo &>/dev/null; then
-            sudo dnf install -y easyeffects lsp-plugins || log_warn "Aviso al instalar EasyEffects mediante sudo dnf."
+    log_step "Instalando y Configurando Suite DSP de Audio Espacial (Dolby Atmos & Soundstage)..."
+
+    # Instalar paquetes de EasyEffects y plugins LV2 si faltan
+    if ! command -v easyeffects &>/dev/null; then
+        log_info "Instalando EasyEffects y plugins de efectos de estudio..."
+        if [ "$EUID" -eq 0 ]; then
+            dnf install -y easyeffects lsp-plugins calf lv2-calf-plugins lv2-mdala-plugins lv2-zam-plugins || log_warn "Aviso al instalar paquetes DSP mediante dnf."
         else
-            log_error "Se requieren permisos de administrador para instalar paquetes RPM."
-            return 1
+            if command -v sudo &>/dev/null; then
+                sudo dnf install -y easyeffects lsp-plugins calf lv2-calf-plugins lv2-mdala-plugins lv2-zam-plugins || log_warn "Aviso al instalar paquetes DSP mediante sudo dnf."
+            else
+                log_error "Se requieren permisos de administrador para instalar paquetes RPM."
+                return 1
+            fi
         fi
     fi
-    log_success "EasyEffects y plugins LSP instalados."
+    log_success "Paquetes de EasyEffects y plugins de audio verificados."
+
+    # Instalar perfiles y archivos de respuesta de impulso (IRS)
+    local user_ee_output="$REAL_HOME/.local/share/easyeffects/output"
+    local user_ee_irs="$REAL_HOME/.local/share/easyeffects/irs"
+    mkdir -p "$user_ee_output" "$user_ee_irs"
+    mkdir -p "$REAL_HOME/.config/easyeffects/output" "$REAL_HOME/.config/easyeffects/irs"
+
+    if [ -d "$SCRIPT_DIR/presets" ]; then
+        log_info "Instalando perfiles de audio espacial (Dolby Atmos, Loudness, Crystalizer)..."
+        cp -f "$SCRIPT_DIR/presets/"*.json "$user_ee_output/" 2>/dev/null || true
+        cp -f "$SCRIPT_DIR/presets/"*.json "$REAL_HOME/.config/easyeffects/output/" 2>/dev/null || true
+        if [ -d "$SCRIPT_DIR/presets/irs" ]; then
+            log_info "Instalando respuestas de impulso acústico (Dolby/Waves/Razer)..."
+            cp -f "$SCRIPT_DIR/presets/irs/"* "$user_ee_irs/" 2>/dev/null || true
+            cp -f "$SCRIPT_DIR/presets/irs/"* "$REAL_HOME/.config/easyeffects/irs/" 2>/dev/null || true
+        fi
+        chown -R "$REAL_USER:$REAL_USER" "$user_ee_output" "$user_ee_irs" 2>/dev/null || true
+        chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/easyeffects" 2>/dev/null || true
+    fi
+
+    # Configurar servicio en segundo plano (systemd user service) para que se ejecute silenciosamente
+    local service_dir="$REAL_HOME/.config/systemd/user"
+    mkdir -p "$service_dir"
+    cat > "$service_dir/easyeffects.service" << 'EOF'
+[Unit]
+Description=EasyEffects Audio Service
+Documentation=https://github.com/wwmm/easyeffects
+After=pipewire.service wireplumber.service
+PartOf=pipewire.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/easyeffects --service-mode
+Restart=on-failure
+RestartSec=3s
+
+[Install]
+WantedBy=default.target
+EOF
+    chown -R "$REAL_USER:$REAL_USER" "$service_dir" 2>/dev/null || true
+
+    # Habilitar e iniciar servicio para el usuario real
+    log_info "Habilitando servicio en segundo plano de EasyEffects (systemd user)..."
+    if [ "$EUID" -eq 0 ]; then
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" systemctl --user daemon-reload || true
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" systemctl --user enable --now easyeffects.service || true
+    else
+        systemctl --user daemon-reload || true
+        systemctl --user enable --now easyeffects.service || true
+    fi
+
+    sleep 1
+    # Cargar por defecto el perfil Dolby Atmos Spatial Studio
+    log_info "Cargando perfil espacial: 'Dolby Atmos Spatial Studio'..."
+    if [ "$EUID" -eq 0 ]; then
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" easyeffects -l "Dolby Atmos Spatial Studio" 2>/dev/null || true
+    else
+        easyeffects -l "Dolby Atmos Spatial Studio" 2>/dev/null || true
+    fi
+
+    log_success "¡Audio Espacial activado! Se ha eliminado el efecto encapsulado gracias a crossfeed binaural, ensanchamiento stereo y ecualización de presencia."
 }
 
 # 5. Diagnóstico de Estado y Monitor Bit-Perfect
@@ -433,8 +500,8 @@ show_menu() {
         echo -e "Selecciona una opción:"
         echo -e "  1) ${GREEN}${BOLD}Activar Núcleo Hi-Fi Bit-Perfect${NC} (44.1k-192k nativo, 24/32bit S32LE, soxr 14)"
         echo -e "  2) ${CYAN}Configurar Bluetooth Hi-Fi${NC} (LDAC HQ 990kbps, SBC-XQ, aptX)"
-        echo -e "  3) ${BLUE}Instalar Suite DSP${NC} (EasyEffects & LSP-Plugins para ecualización)"
-        echo -e "  4) ${YELLOW}${BOLD}Instalación Completa${NC} (Núcleo Hi-Fi + Bluetooth Hi-Fi + DSP)"
+        echo -e "  3) ${BLUE}Activar Audio Espacial / Dolby Atmos${NC} (Soundstage abierto, Crossfeed, Crystalizer, estilo macOS/Win)"
+        echo -e "  4) ${YELLOW}${BOLD}Instalación Completa${NC} (Núcleo Hi-Fi + Bluetooth Hi-Fi + Audio Espacial)"
         echo -e "  5) Ver ${BOLD}Diagnóstico de Estado y Hardware${NC}"
         echo -e "  6) Ejecutar ${BOLD}Prueba de Conmutación Bit-Perfect${NC}"
         echo -e "  7) ${RED}Restaurar configuración de fábrica (Rollback)${NC}"
@@ -489,7 +556,7 @@ if [ $# -gt 0 ]; then
         -b|--bluetooth)
             install_bluetooth_hifi
             ;;
-        -e|--easyeffects|--dsp)
+        -e|--easyeffects|--dsp|--spatial|--dolby)
             install_dsp_suite
             ;;
         -a|--all)
@@ -511,8 +578,8 @@ if [ $# -gt 0 ]; then
             echo "Opciones:"
             echo "  -i, --install      Activa el núcleo Hi-Fi Bit-Perfect (192kHz/24-32bit, soxr, ALSA)"
             echo "  -b, --bluetooth    Configura Bluetooth de alta fidelidad (LDAC HQ, SBC-XQ, aptX)"
-            echo "  -e, --dsp          Instala EasyEffects y plugins LSP"
-            echo "  -a, --all          Instala todo (Hi-Fi + Bluetooth + DSP)"
+            echo "  -e, --spatial      Activa Audio Espacial / Dolby Atmos (EasyEffects, Soundstage, Crossfeed)"
+            echo "  -a, --all          Instala todo (Hi-Fi + Bluetooth + Audio Espacial)"
             echo "  -s, --status       Muestra el estado y diagnóstico del hardware"
             echo "  -t, --test         Ejecuta la prueba de conmutación de frecuencias Bit-Perfect"
             echo "  -r, --restore      Restaura las configuraciones de fábrica"

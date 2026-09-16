@@ -25,6 +25,7 @@ También admite ejecución directa:
 ./instalar-apps.sh --zen-build
 ./instalar-apps.sh --virtualbox   # VirtualBox en Fedora (akmods y Secure Boot)
 ./instalar-apps.sh --audio-hifi   # Audio Hi-Fi / Bit-Perfect (192kHz/24bit, PipeWire)
+./instalar-apps.sh --spatial      # Audio Espacial / Dolby Atmos (elimina sonido encapsulado)
 ./instalar-apps.sh --gamepad      # Parche mandos Bluetooth/XInput (Steam, Lutris, Proton)
 ./instalar-apps.sh --fedora-tools # Menú de herramientas para Fedora
 ```
@@ -53,7 +54,7 @@ para abrirlo al finalizar.
   - **Carga de módulo de kernel**: Asegura la carga automática del módulo `uinput`.
   - **Diagnóstico y pruebas en vivo**: Muestra el estado de mandos Bluetooth, nodos evdev, hidraw, detección SDL2 y un monitor de respuesta de botones en tiempo real.
   - **Rollback**: Permite revertir todas las configuraciones de manera limpia a los valores originales.
-- `fedora-tools/setup_audio_hifi.sh` configura el subsistema de audio en Fedora Linux para lograr **Alta Fidelidad Pura y Bit-Perfect** hasta el límite del hardware (DAC Realtek ALC623 y HDMI):
+- `fedora-tools/setup_audio_hifi.sh` configura el subsistema de audio en Fedora Linux para lograr **Alta Fidelidad Pura y Bit-Perfect** hasta el límite del hardware (DAC Realtek ALC623, USB-C y HDMI):
   - **Conmutación dinámica de frecuencias (Bit-Perfect)**: Admite de forma nativa `44.1 kHz`, `48.0 kHz`, `88.2 kHz`, `96.0 kHz`, `176.4 kHz` y `192.0 kHz` sin remuestreo forzado.
   - **Profundidad nativa de 24/32 bits (`S32LE`)**: Aprovecha el rango dinámico completo del hardware (>110 dB) en lugar del estándar recortado de 16 bits.
   - **Calidad de remuestreo audiófilo nivel 14 (`libsoxr`)**: Interpolación sinc de grado de estudio en caso de flujos concurrentes.
@@ -61,7 +62,9 @@ para abrirlo al finalizar.
   - **Eliminación de pops y latencia**: Desactiva el ahorro de energía agresivo en `snd_hda_intel` (`power_save=0`), manteniendo los osciladores del DAC activos.
   - **Prioridad en tiempo real**: Configura límites PAM (`rtprio 95`, `memlock unlimited`) para evitar cortes de audio (*xruns*).
   - **Bluetooth de alta definición**: Habilita SBC-XQ, prioridad LDAC (HQ 990 kbps forzado) y códecs `aptX`/`aptX HD` con RPM Fusion.
-  - **Suite DSP opcional**: Instalación de `EasyEffects` y plugins `LSP` para ecualización paramétrica y corrección acústica.
+  - **Audio Espacial y Dolby Atmos / Soundstage (estilo macOS/Windows)**: Resuelve el sonido encapsulado mediante crossfeed binaural (Bauer bs2b a 700 Hz / 4.5 dB), ensanchamiento estéreo Mid/Side (+25% anchura y +1.8 dB laterales) y excitación armónica (Crystalizer).
+  - **Presets de Estudio e IRS Acústicos**: Incluye perfiles como `Dolby Atmos Spatial Studio`, `LoudnessCrystalEqualizer`, y respuestas al impulso (IRS) de Dolby Atmos, Waves MaxxAudio y Razer Surround.
+  - **Servicio transparente en segundo plano**: Daemon nativo `systemd --user` (`easyeffects.service`) sin ventanas abiertas obligatorias.
   - **Diagnóstico y Rollback**: Monitor en vivo del reloj de hardware y restauración limpia a los valores por defecto de Fedora.
 - `fedora-tools/install_virtualbox.sh` automatiza la instalación y configuración
   completa de VirtualBox en Fedora Linux:

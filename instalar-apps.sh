@@ -1018,6 +1018,7 @@ show_help() {
     echo -e "  --gentoo-tools Abre el menú de compilación para Gentoo"
     echo -e "  --virtualbox   Instala/configura VirtualBox en Fedora (RPM Fusion, akmods, Secure Boot)"
     echo -e "  --audio-hifi, --hifi Configura audio de alta fidelidad (Hi-Fi / Bit-Perfect) en Fedora"
+    echo -e "  --spatial, --dolby   Activa Audio Espacial Dolby Atmos / Soundstage (elimina sonido encapsulado)"
     echo -e "  --gamepad, --gamepad-patch Parche y soporte de mandos Bluetooth/XInput para Steam y Lutris"
     echo -e "  --fedora-tools Abre el menú de herramientas para Fedora"
     echo -e "  -h, --help      Muestra esta ayuda"
@@ -1149,6 +1150,9 @@ if [ $# -gt 0 ]; then
             ;;
         --audio-hifi|--hifi|--hifi-audio)
             exec "$SCRIPT_DIR/fedora-tools/setup_audio_hifi.sh"
+            ;;
+        --spatial|--dolby|--audio-spatial)
+            exec "$SCRIPT_DIR/fedora-tools/setup_audio_hifi.sh" --spatial
             ;;
         --gamepad|--gamepad-patch|--gamepads)
             exec "$SCRIPT_DIR/fedora-tools/setup_gamepad_patch.sh"
