@@ -62,8 +62,8 @@ para abrirlo al finalizar.
   - **Eliminación de pops y latencia**: Desactiva el ahorro de energía agresivo en `snd_hda_intel` (`power_save=0`), manteniendo los osciladores del DAC activos.
   - **Prioridad en tiempo real**: Configura límites PAM (`rtprio 95`, `memlock unlimited`) para evitar cortes de audio (*xruns*).
   - **Bluetooth de alta definición**: Habilita SBC-XQ, prioridad LDAC (HQ 990 kbps forzado) y códecs `aptX`/`aptX HD` con RPM Fusion.
-  - **Audio Espacial y Dolby Atmos / Soundstage (estilo macOS/Windows)**: Resuelve el sonido encapsulado mediante crossfeed binaural (Bauer bs2b a 700 Hz / 4.5 dB), ensanchamiento estéreo Mid/Side (+25% anchura y +1.8 dB laterales) y excitación armónica (Crystalizer).
-  - **Presets de Estudio e IRS Acústicos**: Incluye perfiles como `Dolby Atmos Spatial Studio`, `LoudnessCrystalEqualizer`, y respuestas al impulso (IRS) de Dolby Atmos, Waves MaxxAudio y Razer Surround.
+  - **Audio Espacial y Dolby Atmos / Soundstage (estilo macOS/Windows)**: Resuelve el sonido encapsulado mediante convolución acústica HRIR, micro-reflexiones tempranas de sala tratada, crossfeed binaural (Bauer bs2b a 700 Hz / 4.5 dB), ensanchamiento estéreo Mid/Side (+25% anchura y +1.8 dB laterales) y excitación armónica (Crystalizer).
+  - **Presets de Estudio e IRS Acústicos**: Incluye perfiles calibrados y libres de distorsión como `Dolby Atmos Spatial Studio` (crossfeed y ensanchamiento dinámico), `Dolby Atmos Convolver Studio` (convolución HRIR con respuesta de cine), `Apple Spatial Audio Studio` (reflexiones tempranas de sala acústica al estilo macOS), `LoudnessCrystalEqualizer`, y respuestas al impulso (IRS) de Dolby Atmos, Waves MaxxAudio y Razer Surround.
   - **Servicio transparente en segundo plano**: Daemon nativo `systemd --user` (`easyeffects.service`) sin ventanas abiertas obligatorias.
   - **Diagnóstico y Rollback**: Monitor en vivo del reloj de hardware y restauración limpia a los valores por defecto de Fedora.
 - `fedora-tools/install_virtualbox.sh` automatiza la instalación y configuración
