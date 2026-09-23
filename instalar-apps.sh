@@ -1020,6 +1020,7 @@ show_help() {
     echo -e "  --audio-hifi, --hifi Configura audio de alta fidelidad (Hi-Fi / Bit-Perfect) en Fedora"
     echo -e "  --spatial, --dolby, --native-spatial Activa Audio Espacial Nativo en PipeWire (C/SPA, 0 ms latencia, sin intermediarios)"
     echo -e "  --gamepad, --gamepad-patch Parche y soporte de mandos Bluetooth/XInput para Steam y Lutris"
+    echo -e "  --browser-mpris, --mpris-patch Parche multimedia para navegadores (timeline y posición en KDE Plasma)"
     echo -e "  --fedora-tools Abre el menú de herramientas para Fedora"
     echo -e "  -h, --help      Muestra esta ayuda"
 }
@@ -1044,7 +1045,7 @@ show_main_menu() {
     echo -e "  2) Instalar o Registrar ${BOLD}Antigravity IDE${RESET}"
     echo -e "  3) Instalar o Registrar ${BOLD}VSCodium${RESET}"
     echo -e "  4) Abrir ${BOLD}Herramientas Gentoo${RESET} (compilar PCSX2 o Zen Browser)"
-    echo -e "  5) Abrir ${BOLD}Herramientas Fedora${RESET} (VirtualBox, Audio Hi-Fi, Parche Mandos)"
+    echo -e "  5) Abrir ${BOLD}Herramientas Fedora${RESET} (VirtualBox, Audio Hi-Fi, Mandos, Navegadores/MPRIS)"
     echo -e "  6) Instalar/Registrar una ${BOLD}Aplicación Genérica${RESET} (.tar.*)"
     echo -e "  7) Configurar accesos directos para carpeta en ${BOLD}/opt/${RESET}"
     echo -e "  8) Salir"
@@ -1088,7 +1089,8 @@ show_fedora_tools_menu() {
         echo -e "  1) Instalar ${BOLD}VirtualBox${RESET} (akmods, Secure Boot, Extension Pack)"
         echo -e "  2) Configurar ${BOLD}Audio Hi-Fi / Bit-Perfect${RESET} & Audio Espacial Nativo"
         echo -e "  3) Parche para ${BOLD}Mandos Bluetooth/USB${RESET} (Steam, Lutris, Proton, Wine, XInput)"
-        echo -e "  4) Volver al menú principal"
+        echo -e "  4) Parche Multimedia para ${BOLD}Navegadores & MPRIS${RESET} (Barra de progreso y posición en KDE)"
+        echo -e "  5) Volver al menú principal"
         echo -e "${CYAN}--------------------------------------------------${RESET}"
         echo -ne "Opción: "
         read -r fedora_choice
@@ -1104,6 +1106,9 @@ show_fedora_tools_menu() {
                 "$SCRIPT_DIR/fedora-tools/setup_gamepad_patch.sh" || true
                 ;;
             4)
+                "$SCRIPT_DIR/fedora-tools/setup_browser_mpris.sh" || true
+                ;;
+            5)
                 return 0
                 ;;
             *)
@@ -1164,6 +1169,10 @@ if [ $# -gt 0 ]; then
         --gamepad|--gamepad-patch|--gamepads)
             shift
             exec "$SCRIPT_DIR/fedora-tools/setup_gamepad_patch.sh" "$@"
+            ;;
+        --browser-mpris|--mpris-patch|--browser-audio|--browser-media)
+            shift
+            exec "$SCRIPT_DIR/fedora-tools/setup_browser_mpris.sh" "$@"
             ;;
         --fedora-tools)
             show_fedora_tools_menu

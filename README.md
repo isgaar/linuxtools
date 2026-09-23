@@ -28,6 +28,7 @@ También admite ejecución directa:
 ./instalar-apps.sh --spatial      # Audio Espacial Nativo PipeWire (C/SPA, convolución HRIR, sin intermediarios)
 ./instalar-apps.sh --easyeffects  # Audio Espacial alternativo mediante EasyEffects (GUI dinámico)
 ./instalar-apps.sh --gamepad      # Parche mandos Bluetooth/XInput (Steam, Lutris, Proton)
+./instalar-apps.sh --browser-mpris# Parche multimedia para navegadores (timeline y posición en KDE Plasma)
 ./instalar-apps.sh --fedora-tools # Menú de herramientas para Fedora
 ```
 
@@ -80,6 +81,14 @@ para abrirlo al finalizar.
   - Compilación y firma forzada de módulos (`akmods --rebuild`) para el kernel en ejecución.
   - Añade al usuario actual al grupo `vboxusers`.
   - Instalación opcional y automatizada del Oracle VM VirtualBox Extension Pack.
+- `fedora-tools/setup_browser_mpris.sh` soluciona los problemas del widget **"Reproductor multimedia"** de KDE Plasma con navegadores web (Zen Browser, Firefox, Brave, Chrome):
+  - **Causa resuelta**: El reproductor nativo de Firefox/Zen (`widget.mpris.enabled`) omite la duración (`mpris:length`) y mantiene la posición fija en `0`, provocando que el widget de KDE Plasma oculte la barra de progreso (timeline/seekbar) y no permita adelantar o atrasar el audio.
+  - **Integración Nativa de Plasma**: Instala y enlaza `plasma-browser-integration` y `playerctl` en Fedora Linux.
+  - **Soporte completo para Zen Browser y derivados**: Registra los manifiestos Native Messaging Hosts en `~/.config/zen`, `~/.mozilla` y `/opt/zen`, inyecta la extensión oficial de KDE Plasma y configura directivas empresariales (`policies.json`).
+  - **Integración y compatibilidad multimedia en `user.js`**: Garantiza la operatividad del reproductor multimedia y cede el control dinámico a Plasma Browser Integration para habilitar la barra de tiempo, posición en vivo y el progreso de descargas en el panel de KDE Plasma.
+  - **Soporte para Brave, Google Chrome y Chromium**: Registra manifiestos nativos y políticas para auto-instalación del complemento de KDE Plasma (`cimiefiiaegbelhefglklhhakcgmhkai`).
+  - **Monitor y Diagnóstico en Vivo**: Inspecciona en tiempo real el bus de usuario MPRIS, metadatos (`xesam:title`, `xesam:artist`), duración formateada y posición actual.
+  - **Reversión (Rollback)**: Permite restaurar limpiamente la configuración original de perfiles y políticas del sistema.
 
 ## Requisitos
 
