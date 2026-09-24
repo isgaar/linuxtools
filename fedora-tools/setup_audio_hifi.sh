@@ -358,8 +358,20 @@ install_hifi_loss_audio() {
         sink_id=$(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | grep "hifi_loss_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
         if [ -n "$sink_id" ]; then
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-default "$sink_id" 2>/dev/null || true
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" pactl set-default-sink hifi_loss_sink 2>/dev/null || true
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
         fi
+        # Limpiar afinidades obsoletas en WirePlumber (como easyeffects_sink)
+        if [ -f "$REAL_HOME/.local/state/wireplumber/stream-properties" ]; then
+            sed -i 's/"target":"easyeffects_sink", //g; s/, "target":"easyeffects_sink"//g' "$REAL_HOME/.local/state/wireplumber/stream-properties" 2>/dev/null || true
+        fi
+        if [ -f "$REAL_HOME/.local/state/wireplumber/default-nodes" ]; then
+            sed -i 's/^default\.configured\.audio\.sink=.*/default.configured.audio.sink=hifi_loss_sink/' "$REAL_HOME/.local/state/wireplumber/default-nodes" 2>/dev/null || true
+        fi
+        # Re-enrutar streams de aplicaciones activas hacia hifi_loss_sink
+        for input_id in $(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" pactl list short sink-inputs 2>/dev/null | awk '$3 != "-" {print $1}'); do
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" pactl move-sink-input "$input_id" hifi_loss_sink 2>/dev/null || true
+        done
         # Maximizar volumen físico del hardware para evitar doble atenuación
         for hw_sink in $(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
@@ -368,8 +380,20 @@ install_hifi_loss_audio() {
         sink_id=$(wpctl status 2>/dev/null | grep "hifi_loss_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
         if [ -n "$sink_id" ]; then
             wpctl set-default "$sink_id" 2>/dev/null || true
+            pactl set-default-sink hifi_loss_sink 2>/dev/null || true
             wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
         fi
+        # Limpiar afinidades obsoletas en WirePlumber (como easyeffects_sink)
+        if [ -f "$REAL_HOME/.local/state/wireplumber/stream-properties" ]; then
+            sed -i 's/"target":"easyeffects_sink", //g; s/, "target":"easyeffects_sink"//g' "$REAL_HOME/.local/state/wireplumber/stream-properties" 2>/dev/null || true
+        fi
+        if [ -f "$REAL_HOME/.local/state/wireplumber/default-nodes" ]; then
+            sed -i 's/^default\.configured\.audio\.sink=.*/default.configured.audio.sink=hifi_loss_sink/' "$REAL_HOME/.local/state/wireplumber/default-nodes" 2>/dev/null || true
+        fi
+        # Re-enrutar streams de aplicaciones activas hacia hifi_loss_sink
+        for input_id in $(pactl list short sink-inputs 2>/dev/null | awk '$3 != "-" {print $1}'); do
+            pactl move-sink-input "$input_id" hifi_loss_sink 2>/dev/null || true
+        done
         # Maximizar volumen físico del hardware para evitar doble atenuación
         for hw_sink in $(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
             wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
@@ -624,15 +648,22 @@ show_status() {
     fi
 
     echo -e "\n${BOLD}8. Perfil de Procesamiento Activo en PipeWire:${NC}"
-    if wpctl status 2>/dev/null | grep -q "hifi_loss_sink"; then
-        echo -e "${GREEN}[ACTIVO]${NC} Perfil Maestro Fusión 'hifi-loss' (Hi-Fi Lossless: Harman/Target + Sub-25Hz + Mid/Side + Bauer + Techo -0.14 dBFS)"
-    elif wpctl status 2>/dev/null | grep -q "spatial_audio_sink"; then
-        echo -e "${GREEN}[ACTIVO]${NC} Audio Espacial Nativo (10 Bandas + Pasa-Altos Subsónico 25 Hz + Mid/Side + Bauer)"
-    elif wpctl status 2>/dev/null | grep -q "windows_reference_sink"; then
-        echo -e "${CYAN}[ACTIVO]${NC} Audio Referencia Neutro Windows (Respuesta plana 1:1, 0% diafonía, -0.14 dBFS)"
+    local default_sink
+    default_sink=$(pactl get-default-sink 2>/dev/null || wpctl status 2>/dev/null | grep -A 2 "Default Configured Devices" | grep "Audio/Sink" | awk '{print $NF}')
+    if [ "$default_sink" = "hifi_loss_sink" ]; then
+        echo -e "${GREEN}[ACTIVO Y PREDETERMINADO]${NC} Perfil Maestro Fusión 'hifi-loss' (Hi-Fi Lossless: Harman/Target + Sub-25Hz + Mid/Side + Bauer + Techo -0.14 dBFS)"
+    elif wpctl status 2>/dev/null | grep -q "hifi_loss_sink"; then
+        echo -e "${YELLOW}[CARGADO PERO NO PREDETERMINADO]${NC} Perfil 'hifi-loss' está en memoria, pero el destino actual es: $default_sink"
+    elif [ "$default_sink" = "spatial_audio_sink" ]; then
+        echo -e "${GREEN}[ACTIVO Y PREDETERMINADO]${NC} Audio Espacial Nativo (10 Bandas + Pasa-Altos Subsónico 25 Hz + Mid/Side + Bauer)"
+    elif [ "$default_sink" = "windows_reference_sink" ]; then
+        echo -e "${CYAN}[ACTIVO Y PREDETERMINADO]${NC} Audio Referencia Neutro Windows (Respuesta plana 1:1, 0% diafonía, -0.14 dBFS)"
     else
-        echo -e "${YELLOW}[DIRECTO]${NC} Salida directa a hardware ALSA sin filtros de usuario."
+        echo -e "${YELLOW}[DIRECTO]${NC} Salida directa a hardware ALSA ($default_sink) sin filtros de procesamiento."
     fi
+
+    echo -e "\n${BOLD}9. Flujos de Audio en Reproducción (Streams):${NC}"
+    wpctl status 2>/dev/null | sed -n '/Streams:/,/Video/p' | sed '$d'
 }
 
 # 6. Prueba de Conmutación Dinámica (Bit-Perfect Test)
