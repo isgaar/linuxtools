@@ -89,6 +89,7 @@ para abrirlo al finalizar.
   - **Soporte para Brave, Google Chrome y Chromium**: Registra manifiestos nativos y políticas para auto-instalación del complemento de KDE Plasma (`cimiefiiaegbelhefglklhhakcgmhkai`).
   - **Monitor y Diagnóstico en Vivo**: Inspecciona en tiempo real el bus de usuario MPRIS, metadatos (`xesam:title`, `xesam:artist`), duración formateada y posición actual.
   - **Reversión (Rollback)**: Permite restaurar limpiamente la configuración original de perfiles y políticas del sistema.
+- `measurements/` y `TODO/WINDOWS_AUDIO_PROFILE.md`: Suite de medición acústica de caja negra (*black-box*) y reporte técnico exhaustivo para replicación y comparación objetiva entre Windows (Realtek ALC623) y Fedora Linux (PipeWire / ALSA). Incluye parche de pines HDA (`fedora-tools/alsa-realtek-alc623.fw`) y perfil neutro (`fedora-tools/pipewire/65-windows-reference-profile.conf`).
 
 ## Requisitos
 

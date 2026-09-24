@@ -1,0 +1,36 @@
+{
+  "crosstalk_avg_db": -170.44,
+  "crosstalk_R_from_L_db": -170.44,
+  "crosstalk_L_from_R_db": -170.44,
+  "itd_samples": 1304,
+  "itd_ms": 27.167,
+  "side_to_mid_ratio": 1.0,
+  "side_to_mid_db": 0.0,
+  "frequency_crosstalk": [
+    {
+      "frequency_hz": 250.0,
+      "leakage_db": -169.98,
+      "rms_primary": 0.3154,
+      "rms_crosstalk": 0.0
+    },
+    {
+      "frequency_hz": 700.0,
+      "leakage_db": -169.98,
+      "rms_primary": 0.3157,
+      "rms_crosstalk": 0.0
+    },
+    {
+      "frequency_hz": 2000.0,
+      "leakage_db": -170.01,
+      "rms_primary": 0.3167,
+      "rms_crosstalk": 0.0
+    },
+    {
+      "frequency_hz": 6000.0,
+      "leakage_db": -170.01,
+      "rms_primary": 0.3167,
+      "rms_crosstalk": 0.0
+    }
+  ],
+  "crossfeed_type": "None (Canales Aislados / Bit-Perfect)"
+}

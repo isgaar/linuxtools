@@ -1,0 +1,69 @@
+{
+  "sample_rate": 48000,
+  "rmse_db": 0.651,
+  "biquad_filters": [
+    {
+      "band": 1,
+      "freq_hz": 35.0,
+      "q": 0.94,
+      "gain_db": -0.03
+    },
+    {
+      "band": 2,
+      "freq_hz": 65.0,
+      "q": 0.72,
+      "gain_db": 0.02
+    },
+    {
+      "band": 3,
+      "freq_hz": 125.0,
+      "q": 0.58,
+      "gain_db": -0.06
+    },
+    {
+      "band": 4,
+      "freq_hz": 250.0,
+      "q": 1.25,
+      "gain_db": 0.03
+    },
+    {
+      "band": 5,
+      "freq_hz": 500.0,
+      "q": 1.32,
+      "gain_db": -0.02
+    },
+    {
+      "band": 6,
+      "freq_hz": 1000.0,
+      "q": 0.87,
+      "gain_db": -0.03
+    },
+    {
+      "band": 7,
+      "freq_hz": 2000.0,
+      "q": 0.94,
+      "gain_db": 0.01
+    },
+    {
+      "band": 8,
+      "freq_hz": 4000.0,
+      "q": 3.0,
+      "gain_db": 0.01
+    },
+    {
+      "band": 9,
+      "freq_hz": 8000.0,
+      "q": 3.0,
+      "gain_db": 0.06
+    },
+    {
+      "band": 10,
+      "freq_hz": 12000.0,
+      "q": 3.0,
+      "gain_db": -0.04
+    }
+  ],
+  "max_deviation_db": 1.08,
+  "min_gain_db": -1.08,
+  "max_gain_db": 0.96
+}

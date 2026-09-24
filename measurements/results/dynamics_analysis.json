@@ -1,0 +1,11 @@
+{
+  "ref_low1_dbfs": -33.02,
+  "ref_high_dbfs": -9.01,
+  "rec_low1_dbfs": -33.04,
+  "rec_high_dbfs": -9.04,
+  "delta_input_db": 24.0,
+  "delta_output_db": 24.0,
+  "compression_ratio": 1.0,
+  "compression_detected": false,
+  "drc_profile": "Linear / Pass-through (Bit-Perfect Dynamics)"
+}

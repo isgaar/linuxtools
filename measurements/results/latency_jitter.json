@@ -1,0 +1,31 @@
+{
+  "impulse_and_latency": {
+    "roundtrip_latency_ms": 93.35,
+    "latency_samples": 4481,
+    "rt60_estimated_ms": 0.31,
+    "has_reverb_tail": false,
+    "convolution_type": "Direct / No Reverb (Impulso Puro Dirac)"
+  },
+  "clock_thd_440hz": {
+    "test_freq_hz": 440.0,
+    "measured_freq_hz": 440.0,
+    "freq_drift_hz": 0.0,
+    "fundamental_level_dbfs": -20.03,
+    "thd_percent": 0.0,
+    "thd_db": -159.81,
+    "thdn_db": -3.01,
+    "noise_floor_dbfs": -208.93,
+    "clock_stability": "Perfect Lock (0 Hz drift)"
+  },
+  "clock_thd_1000hz": {
+    "test_freq_hz": 1000.0,
+    "measured_freq_hz": 1000.0,
+    "freq_drift_hz": 0.0,
+    "fundamental_level_dbfs": -20.02,
+    "thd_percent": 0.0,
+    "thd_db": -151.04,
+    "thdn_db": -3.01,
+    "noise_floor_dbfs": -212.93,
+    "clock_stability": "Perfect Lock (0 Hz drift)"
+  }
+}
