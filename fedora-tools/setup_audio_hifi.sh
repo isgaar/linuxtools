@@ -351,17 +351,16 @@ install_hifi_loss_audio() {
 
     sleep 1.5
 
-    # 4. Establecer hifi_loss_sink como el sink predeterminado y calibrar volúmenes
-    log_info "Configurando 'hifi_loss_sink' como salida de audio principal y calibrando nivel al 100%..."
+    # 4. Establecer hifi_loss_sink como el sink predeterminado (SIN tocar el volumen del usuario)
+    log_info "Configurando 'hifi_loss_sink' como salida de audio principal..."
     local sink_id
     if [ "$EUID" -eq 0 ]; then
         sink_id=$(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | grep "hifi_loss_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
         if [ -n "$sink_id" ]; then
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-default "$sink_id" 2>/dev/null || true
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" pactl set-default-sink hifi_loss_sink 2>/dev/null || true
-            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
         fi
-        # Limpiar afinidades obsoletas en WirePlumber (como easyeffects_sink)
+        # Limpiar afinidades obsoletas en WirePlumber
         if [ -f "$REAL_HOME/.local/state/wireplumber/stream-properties" ]; then
             sed -i 's/"target":"easyeffects_sink", //g; s/, "target":"easyeffects_sink"//g' "$REAL_HOME/.local/state/wireplumber/stream-properties" 2>/dev/null || true
         fi
@@ -372,18 +371,40 @@ install_hifi_loss_audio() {
         for input_id in $(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" pactl list short sink-inputs 2>/dev/null | awk '$3 != "-" {print $1}'); do
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" pactl move-sink-input "$input_id" hifi_loss_sink 2>/dev/null || true
         done
-        # Maximizar volumen físico del hardware para evitar doble atenuación
-        for hw_sink in $(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
-            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
-        done
+
+        # 5. Instalar servicio en las entrañas del sistema (hifi-loss-router para DP, USB-C y Analógico)
+        log_info "Instalando enrutador dinámico en las entrañas del sistema (hifi-loss-router)..."
+        cp -f "$SCRIPT_DIR/hifi-loss-router.py" /usr/local/bin/hifi-loss-router
+        chmod +x /usr/local/bin/hifi-loss-router
+
+        mkdir -p /etc/systemd/user
+        cat > /etc/systemd/user/hifi-loss-router.service << 'SVCEOF'
+[Unit]
+Description=Hi-Fi Lossless Dynamic Hardware Audio Router
+Documentation=https://github.com/isgaar/linuxtools
+After=pipewire.service wireplumber.service pipewire-pulse.service
+PartOf=pipewire.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/hifi-loss-router
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=default.target
+SVCEOF
+
+        # Habilitar para el usuario real
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" systemctl --user daemon-reload 2>/dev/null || true
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" systemctl --user enable --now hifi-loss-router.service 2>/dev/null || true
     else
         sink_id=$(wpctl status 2>/dev/null | grep "hifi_loss_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
         if [ -n "$sink_id" ]; then
             wpctl set-default "$sink_id" 2>/dev/null || true
             pactl set-default-sink hifi_loss_sink 2>/dev/null || true
-            wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
         fi
-        # Limpiar afinidades obsoletas en WirePlumber (como easyeffects_sink)
+        # Limpiar afinidades obsoletas en WirePlumber
         if [ -f "$REAL_HOME/.local/state/wireplumber/stream-properties" ]; then
             sed -i 's/"target":"easyeffects_sink", //g; s/, "target":"easyeffects_sink"//g' "$REAL_HOME/.local/state/wireplumber/stream-properties" 2>/dev/null || true
         fi
@@ -394,13 +415,35 @@ install_hifi_loss_audio() {
         for input_id in $(pactl list short sink-inputs 2>/dev/null | awk '$3 != "-" {print $1}'); do
             pactl move-sink-input "$input_id" hifi_loss_sink 2>/dev/null || true
         done
-        # Maximizar volumen físico del hardware para evitar doble atenuación
-        for hw_sink in $(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
-            wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
-        done
+
+        # 5. Instalar servicio de usuario
+        log_info "Instalando enrutador dinámico (hifi-loss-router)..."
+        mkdir -p "$REAL_HOME/.local/bin" "$REAL_HOME/.config/systemd/user"
+        cp -f "$SCRIPT_DIR/hifi-loss-router.py" "$REAL_HOME/.local/bin/hifi-loss-router"
+        chmod +x "$REAL_HOME/.local/bin/hifi-loss-router"
+
+        cat > "$REAL_HOME/.config/systemd/user/hifi-loss-router.service" << 'SVCEOF'
+[Unit]
+Description=Hi-Fi Lossless Dynamic Hardware Audio Router
+Documentation=https://github.com/isgaar/linuxtools
+After=pipewire.service wireplumber.service pipewire-pulse.service
+PartOf=pipewire.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/hifi-loss-router
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=default.target
+SVCEOF
+
+        systemctl --user daemon-reload 2>/dev/null || true
+        systemctl --user enable --now hifi-loss-router.service 2>/dev/null || true
     fi
 
-    log_success "¡Perfil Maestro 'hifi-loss' activado en PipeWire! Máxima fidelidad, cero distorsión, escena amplia y sonido superior a Windows."
+    log_success "¡Perfil Maestro 'hifi-loss' y enrutador dinámico activados en las entrañas de PipeWire!"
 }
 
 # Alias para compatibilidad hacia atrás
