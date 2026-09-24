@@ -239,12 +239,16 @@ EOF
         fi
     fi
 
-    # D) ALSA Hardware Mixer: Fijar PCM al 100% (0 dB) para transmisión de bits inalterada al DAC
+    # D) ALSA Hardware Mixer: Fijar PCM y controles al 100% (0 dB) para transmisión de bits inalterada al DAC
     log_info "Calibrando mezclador ALSA a 0 dB de ganancia digital (Bit-Perfect)..."
     for card_num in 0 1 2; do
         if [ -d "/proc/asound/card$card_num" ]; then
             amixer -c "$card_num" sset PCM 100% 2>/dev/null || true
             amixer -c "$card_num" sset PCM 255 2>/dev/null || true
+            amixer -c "$card_num" sset Master 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset Speaker 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset Headphone 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "Line Out" 100% unmute 2>/dev/null || true
             amixer -c "$card_num" sset "Auto-Mute Mode" "Disabled" 2>/dev/null || true
         fi
     done
@@ -319,11 +323,15 @@ install_native_spatial_audio() {
         systemctl --user disable easyeffects.service 2>/dev/null || true
     fi
 
-    # 2. Configurar PipeWire Filter-Chain (Ecualizador de Estudio 10 Bandas + Matriz Mid/Side + Bauer Crossfeed)
+    # 2. Configurar PipeWire Filter-Chain (Ecualizador de Estudio 10 Bandas + Pasa-Altos Subsónico 25 Hz + Mid/Side + Bauer Crossfeed)
     local pw_conf_dir="$REAL_HOME/.config/pipewire/pipewire.conf.d"
     mkdir -p "$pw_conf_dir"
     local template="$SCRIPT_DIR/pipewire/60-native-spatial-audio.conf"
     local target_conf="$pw_conf_dir/60-native-spatial-audio.conf"
+
+    # Retirar perfil neutro Windows si estuviera activo para evitar colisiones
+    rm -f "$pw_conf_dir/65-windows-reference-profile.conf"
+    [ "$EUID" -eq 0 ] && rm -f /etc/pipewire/pipewire.conf.d/65-windows-reference-profile.conf
 
     if [ -f "$template" ]; then
         cp -f "$template" "$target_conf"
@@ -367,6 +375,106 @@ install_native_spatial_audio() {
     fi
 
     log_success "¡Audio Espacial Nativo activado en PipeWire! Sonido de estudio cristalino, amplio y a volumen completo sin intermediarios."
+}
+
+# 5. Instalar y Configurar Perfil de Referencia Neutro Windows en PipeWire
+install_windows_reference_audio() {
+    log_step "Configurando Perfil de Referencia Neutro Windows en PipeWire..."
+
+    # 1. Asegurar que EasyEffects quede detenido
+    log_info "Desactivando intermediarios (EasyEffects)..."
+    if [ "$EUID" -eq 0 ]; then
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" systemctl --user stop easyeffects.service 2>/dev/null || true
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" systemctl --user disable easyeffects.service 2>/dev/null || true
+    else
+        systemctl --user stop easyeffects.service 2>/dev/null || true
+        systemctl --user disable easyeffects.service 2>/dev/null || true
+    fi
+
+    # 2. Configurar PipeWire Filter-Chain Neutro (1:1 lineal, 0% diafonía, techo dinámico -0.14 dBFS)
+    local pw_conf_dir="$REAL_HOME/.config/pipewire/pipewire.conf.d"
+    mkdir -p "$pw_conf_dir"
+    local template="$SCRIPT_DIR/pipewire/65-windows-reference-profile.conf"
+    local target_conf="$pw_conf_dir/65-windows-reference-profile.conf"
+
+    # Retirar perfil espacial si estuviera activo para que la salida sea 100% neutra
+    rm -f "$pw_conf_dir/60-native-spatial-audio.conf"
+    [ "$EUID" -eq 0 ] && rm -f /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf
+
+    if [ -f "$template" ]; then
+        cp -f "$template" "$target_conf"
+    fi
+    chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/pipewire" 2>/dev/null || true
+
+    # Si es root, colocar también en /etc/pipewire
+    if [ "$EUID" -eq 0 ]; then
+        mkdir -p /etc/pipewire/pipewire.conf.d
+        [ -f "$template" ] && cp -f "$template" /etc/pipewire/pipewire.conf.d/65-windows-reference-profile.conf
+    fi
+
+    # 3. Reiniciar servicios de usuario para activar el sink de referencia
+    restart_user_services
+
+    sleep 1.5
+
+    # 4. Establecer windows_reference_sink como el sink predeterminado
+    log_info "Configurando 'windows_reference_sink' como salida de audio principal..."
+    local sink_id
+    if [ "$EUID" -eq 0 ]; then
+        sink_id=$(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | grep "windows_reference_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
+        if [ -n "$sink_id" ]; then
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-default "$sink_id" 2>/dev/null || true
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
+        fi
+        for hw_sink in $(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
+        done
+    else
+        sink_id=$(wpctl status 2>/dev/null | grep "windows_reference_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
+        if [ -n "$sink_id" ]; then
+            wpctl set-default "$sink_id" 2>/dev/null || true
+            wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
+        fi
+        for hw_sink in $(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
+            wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
+        done
+    fi
+
+    log_success "¡Perfil de Referencia Neutro Windows activado en PipeWire! Respuesta plana 1:1, 0% diafonía y techo de -0.14 dBFS."
+}
+
+# 6. Instalar Parche de Pines HDA Realtek ALC623 (Lenovo Chasis)
+install_alc623_pin_patch() {
+    log_step "Aplicando Parche de Pines HDA para Realtek ALC623 (Lenovo Chasis)..."
+    local fw_src="$SCRIPT_DIR/alsa-realtek-alc623.fw"
+    if [ ! -f "$fw_src" ]; then
+        log_error "No se encontró el firmware de pines: $fw_src"
+        return 1
+    fi
+
+    if [ "$EUID" -eq 0 ]; then
+        log_info "Instalando firmware en /lib/firmware/alsa-realtek-alc623.fw..."
+        cp -f "$fw_src" /lib/firmware/alsa-realtek-alc623.fw
+        chmod 644 /lib/firmware/alsa-realtek-alc623.fw
+        log_info "Creando regla modprobe en /etc/modprobe.d/alsa-alc623-pins.conf..."
+        cat > /etc/modprobe.d/alsa-alc623-pins.conf << 'EOF'
+# Parche de pines decodificados para Realtek ALC623 (NID 0x17 Altavoces, 0x14 Línea Trasera, 0x21 Auriculares)
+options snd-hda-intel patch=alsa-realtek-alc623.fw
+EOF
+        log_success "Parche de pines ALSA instalado correctamente en /lib/firmware y /etc/modprobe.d/."
+    else
+        if command -v sudo &>/dev/null; then
+            log_info "Se requieren permisos de administrador (sudo) para instalar en /lib/firmware/:"
+            sudo cp -f "$fw_src" /lib/firmware/alsa-realtek-alc623.fw
+            sudo chmod 644 /lib/firmware/alsa-realtek-alc623.fw
+            echo "options snd-hda-intel patch=alsa-realtek-alc623.fw" | sudo tee /etc/modprobe.d/alsa-alc623-pins.conf >/dev/null
+            log_success "Parche de pines ALSA instalado correctamente con sudo."
+        else
+            log_warn "No se tienen permisos de sudo. Ejecuta como root o con sudo para aplicar el parche."
+            return 1
+        fi
+    fi
+    log_info "Aviso: El parche de hardware ALSA se cargará automáticamente al reiniciar el sistema o al recargar el módulo snd_hda_intel."
 }
 
 # 5. Instalar y Configurar Suite DSP Alternativa (EasyEffects Opcional)
@@ -492,6 +600,22 @@ show_status() {
         echo "power_save: $ps (0 = Inactivo/Hi-Fi, 1 = Ahorro activo)"
         echo "power_save_controller: $psc"
     fi
+
+    echo -e "\n${BOLD}7. Parche de Hardware ALSA para Realtek ALC623:${NC}"
+    if [ -f /lib/firmware/alsa-realtek-alc623.fw ] && [ -f /etc/modprobe.d/alsa-alc623-pins.conf ]; then
+        echo -e "${GREEN}[APLICADO]${NC} Firmware /lib/firmware/alsa-realtek-alc623.fw y modprobe activos."
+    else
+        echo -e "${YELLOW}[NO APLICADO]${NC} Se está utilizando la detección genérica de pines ALSA."
+    fi
+
+    echo -e "\n${BOLD}8. Perfil de Procesamiento Activo en PipeWire:${NC}"
+    if wpctl status 2>/dev/null | grep -q "spatial_audio_sink"; then
+        echo -e "${GREEN}[ACTIVO]${NC} Audio Espacial Nativo (10 Bandas + Pasa-Altos Subsónico 25 Hz + Mid/Side + Bauer)"
+    elif wpctl status 2>/dev/null | grep -q "windows_reference_sink"; then
+        echo -e "${CYAN}[ACTIVO]${NC} Audio Referencia Neutro Windows (Respuesta plana 1:1, 0% diafonía, -0.14 dBFS)"
+    else
+        echo -e "${YELLOW}[DIRECTO]${NC} Salida directa a hardware ALSA sin filtros de usuario."
+    fi
 }
 
 # 6. Prueba de Conmutación Dinámica (Bit-Perfect Test)
@@ -533,6 +657,7 @@ restore_defaults() {
     # Eliminar configuraciones de usuario
     rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/99-hires-audio.conf"
     rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/60-native-spatial-audio.conf"
+    rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/65-windows-reference-profile.conf"
     rm -f "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf"
     rm -f "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-alsa-hifi.conf"
     rm -f "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf"
@@ -541,10 +666,13 @@ restore_defaults() {
     if [ "$EUID" -eq 0 ]; then
         rm -f /etc/pipewire/pipewire.conf.d/99-hires-audio.conf
         rm -f /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf
+        rm -f /etc/pipewire/pipewire.conf.d/65-windows-reference-profile.conf
         rm -f /etc/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf
         rm -f /etc/wireplumber/wireplumber.conf.d/50-alsa-hifi.conf
         rm -f /etc/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf
         rm -f /etc/modprobe.d/audio-hifi-powersave.conf
+        rm -f /etc/modprobe.d/alsa-alc623-pins.conf
+        rm -f /lib/firmware/alsa-realtek-alc623.fw
         rm -f /etc/security/limits.d/99-audio-realtime.conf
 
         if [ -w /sys/module/snd_hda_intel/parameters/power_save ]; then
@@ -567,13 +695,15 @@ show_menu() {
         echo -e "Selecciona una opción:"
         echo -e "  1) ${GREEN}${BOLD}Activar Núcleo Hi-Fi Bit-Perfect${NC} (44.1k-192k nativo, 24/32bit S32LE, soxr 14)"
         echo -e "  2) ${CYAN}Configurar Bluetooth Hi-Fi${NC} (LDAC HQ 990kbps, SBC-XQ, aptX)"
-        echo -e "  3) ${GREEN}${BOLD}Activar Audio Espacial Nativo en PipeWire${NC} (Sin intermediarios, 10 Bandas Estudio + Mid/Side + Bauer)"
-        echo -e "  4) ${BLUE}Alternar a Suite DSP EasyEffects${NC} (Modo aplicación opcional)"
-        echo -e "  5) ${YELLOW}${BOLD}Instalación Completa${NC} (Núcleo Hi-Fi + Bluetooth Hi-Fi + Audio Espacial Nativo)"
-        echo -e "  6) Ver ${BOLD}Diagnóstico de Estado y Hardware${NC}"
-        echo -e "  7) Ejecutar ${BOLD}Prueba de Conmutación Bit-Perfect${NC}"
-        echo -e "  8) ${RED}Restaurar configuración de fábrica (Rollback)${NC}"
-        echo -e "  9) Salir"
+        echo -e "  3) ${GREEN}${BOLD}Activar Audio Espacial Nativo en PipeWire${NC} (10 Bandas + Pasa-Altos Subsónico 25Hz + Mid/Side + Bauer)"
+        echo -e "  4) ${CYAN}${BOLD}Activar Perfil Referencia Neutro Windows${NC} (Respuesta 1:1, 0% diafonía, techo -0.14 dBFS)"
+        echo -e "  5) ${MAGENTA}${BOLD}Aplicar Parche de Pines HDA Realtek ALC623${NC} (Lenovo Chasis: NID 0x17 Altavoces, 0x21 Jacks)"
+        echo -e "  6) ${BLUE}Alternar a Suite DSP EasyEffects${NC} (Modo aplicación opcional)"
+        echo -e "  7) ${YELLOW}${BOLD}Instalación Completa${NC} (Núcleo Hi-Fi + Bluetooth Hi-Fi + Audio Espacial Nativo)"
+        echo -e "  8) Ver ${BOLD}Diagnóstico de Estado y Hardware${NC}"
+        echo -e "  9) Ejecutar ${BOLD}Prueba de Conmutación Bit-Perfect${NC}"
+        echo -e " 10) ${RED}Restaurar configuración de fábrica (Rollback)${NC}"
+        echo -e " 11) Salir"
         echo -e "${CYAN}------------------------------------------------------${NC}"
         echo -ne "Opción: "
         read -r choice
@@ -589,23 +719,29 @@ show_menu() {
                 install_native_spatial_audio
                 ;;
             4)
-                install_dsp_suite
+                install_windows_reference_audio
                 ;;
             5)
+                install_alc623_pin_patch
+                ;;
+            6)
+                install_dsp_suite
+                ;;
+            7)
                 install_core_hifi
                 install_bluetooth_hifi
                 install_native_spatial_audio
                 ;;
-            6)
+            8)
                 show_status
                 ;;
-            7)
+            9)
                 run_bitperfect_test
                 ;;
-            8)
+            10)
                 restore_defaults
                 ;;
-            9)
+            11)
                 echo "¡Hasta luego!"
                 exit 0
                 ;;
@@ -630,6 +766,12 @@ if [ $# -gt 0 ]; then
         -n|--native-spatial|--spatial|--dolby)
             install_native_spatial_audio
             ;;
+        -w|--windows-ref|--reference)
+            install_windows_reference_audio
+            ;;
+        -p|--patch-pins|--alc623)
+            install_alc623_pin_patch
+            ;;
         -e|--easyeffects|--dsp)
             install_dsp_suite
             ;;
@@ -650,15 +792,17 @@ if [ $# -gt 0 ]; then
         -h|--help)
             echo "Uso: $0 [opción]"
             echo "Opciones:"
-            echo "  -i, --install         Activa el núcleo Hi-Fi Bit-Perfect (192kHz/24-32bit, soxr, ALSA)"
-            echo "  -b, --bluetooth       Configura Bluetooth de alta fidelidad (LDAC HQ, SBC-XQ, aptX)"
-            echo "  -n, --spatial, --dolby Activa Audio Espacial Nativo en PipeWire (Sin intermediarios)"
-            echo "  -e, --easyeffects     Instala la Suite DSP alternativa EasyEffects"
-            echo "  -a, --all             Instala todo (Hi-Fi + Bluetooth + Audio Espacial Nativo)"
-            echo "  -s, --status          Muestra el estado y diagnóstico del hardware"
-            echo "  -t, --test            Ejecuta la prueba de conmutación de frecuencias Bit-Perfect"
-            echo "  -r, --restore         Restaura las configuraciones de fábrica"
-            echo "  -h, --help            Muestra esta ayuda"
+            echo "  -i, --install             Activa el núcleo Hi-Fi Bit-Perfect (192kHz/24-32bit, soxr, ALSA)"
+            echo "  -b, --bluetooth           Configura Bluetooth de alta fidelidad (LDAC HQ, SBC-XQ, aptX)"
+            echo "  -n, --spatial, --dolby    Activa Audio Espacial Nativo en PipeWire (Sin intermediarios)"
+            echo "  -w, --windows-ref         Activa el perfil neutro puro de referencia de Windows (-0.14 dBFS)"
+            echo "  -p, --patch-pins          Aplica el parche de pines HDA decodificados para Realtek ALC623"
+            echo "  -e, --easyeffects         Instala la Suite DSP alternativa EasyEffects"
+            echo "  -a, --all                 Instala todo (Hi-Fi + Bluetooth + Audio Espacial Nativo)"
+            echo "  -s, --status              Muestra el estado y diagnóstico del hardware"
+            echo "  -t, --test                Ejecuta la prueba de conmutación de frecuencias Bit-Perfect"
+            echo "  -r, --restore             Restaura las configuraciones de fábrica"
+            echo "  -h, --help                Muestra esta ayuda"
             exit 0
             ;;
         *)
