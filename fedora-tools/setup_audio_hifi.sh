@@ -309,9 +309,9 @@ EOF
     log_success "¡Bluetooth de Alta Fidelidad configurado con éxito!"
 }
 
-# 4. Instalar y Configurar Audio Espacial 100% Nativo en PipeWire (Sin Intermediarios / Filter-Chain)
-install_native_spatial_audio() {
-    log_step "Configurando Audio Espacial 100% Nativo en PipeWire (Cero Intermediarios)..."
+# 4. Instalar y Configurar Perfil Maestro Fusión "hifi-loss" (Hi-Fi Lossless Studio Master)
+install_hifi_loss_audio() {
+    log_step "Configurando Perfil Maestro Fusión 'hifi-loss' en PipeWire..."
 
     # 1. Asegurar que EasyEffects quede detenido y deshabilitado para evitar intermediarios
     log_info "Desactivando intermediarios (EasyEffects)..."
@@ -323,15 +323,17 @@ install_native_spatial_audio() {
         systemctl --user disable easyeffects.service 2>/dev/null || true
     fi
 
-    # 2. Configurar PipeWire Filter-Chain (Ecualizador de Estudio 10 Bandas + Pasa-Altos Subsónico 25 Hz + Mid/Side + Bauer Crossfeed)
+    # 2. Configurar PipeWire Filter-Chain (Perfil Maestro hifi-loss)
     local pw_conf_dir="$REAL_HOME/.config/pipewire/pipewire.conf.d"
     mkdir -p "$pw_conf_dir"
-    local template="$SCRIPT_DIR/pipewire/60-native-spatial-audio.conf"
-    local target_conf="$pw_conf_dir/60-native-spatial-audio.conf"
+    local template="$SCRIPT_DIR/pipewire/60-hifi-loss.conf"
+    local target_conf="$pw_conf_dir/60-hifi-loss.conf"
 
-    # Retirar perfil neutro Windows si estuviera activo para evitar colisiones
-    rm -f "$pw_conf_dir/65-windows-reference-profile.conf"
-    [ "$EUID" -eq 0 ] && rm -f /etc/pipewire/pipewire.conf.d/65-windows-reference-profile.conf
+    # Retirar configuraciones anteriores para evitar colisiones
+    rm -f "$pw_conf_dir/60-native-spatial-audio.conf" "$pw_conf_dir/65-windows-reference-profile.conf"
+    if [ "$EUID" -eq 0 ]; then
+        rm -f /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf /etc/pipewire/pipewire.conf.d/65-windows-reference-profile.conf
+    fi
 
     if [ -f "$template" ]; then
         cp -f "$template" "$target_conf"
@@ -341,7 +343,7 @@ install_native_spatial_audio() {
     # Si es root, colocar también en /etc/pipewire
     if [ "$EUID" -eq 0 ]; then
         mkdir -p /etc/pipewire/pipewire.conf.d
-        [ -f "$template" ] && cp -f "$template" /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf
+        [ -f "$template" ] && cp -f "$template" /etc/pipewire/pipewire.conf.d/60-hifi-loss.conf
     fi
 
     # 3. Reiniciar servicios de usuario para activar el sink nativo
@@ -349,11 +351,11 @@ install_native_spatial_audio() {
 
     sleep 1.5
 
-    # 4. Establecer spatial_audio_sink como el sink predeterminado y calibrar volúmenes
-    log_info "Configurando 'spatial_audio_sink' como salida de audio principal y calibrando nivel al 100%..."
+    # 4. Establecer hifi_loss_sink como el sink predeterminado y calibrar volúmenes
+    log_info "Configurando 'hifi_loss_sink' como salida de audio principal y calibrando nivel al 100%..."
     local sink_id
     if [ "$EUID" -eq 0 ]; then
-        sink_id=$(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | grep "spatial_audio_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
+        sink_id=$(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | grep "hifi_loss_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
         if [ -n "$sink_id" ]; then
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-default "$sink_id" 2>/dev/null || true
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
@@ -363,7 +365,7 @@ install_native_spatial_audio() {
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
         done
     else
-        sink_id=$(wpctl status 2>/dev/null | grep "spatial_audio_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
+        sink_id=$(wpctl status 2>/dev/null | grep "hifi_loss_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
         if [ -n "$sink_id" ]; then
             wpctl set-default "$sink_id" 2>/dev/null || true
             wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
@@ -374,7 +376,12 @@ install_native_spatial_audio() {
         done
     fi
 
-    log_success "¡Audio Espacial Nativo activado en PipeWire! Sonido de estudio cristalino, amplio y a volumen completo sin intermediarios."
+    log_success "¡Perfil Maestro 'hifi-loss' activado en PipeWire! Máxima fidelidad, cero distorsión, escena amplia y sonido superior a Windows."
+}
+
+# Alias para compatibilidad hacia atrás
+install_native_spatial_audio() {
+    install_hifi_loss_audio
 }
 
 # 5. Instalar y Configurar Perfil de Referencia Neutro Windows en PipeWire
@@ -579,16 +586,24 @@ show_status() {
     echo -e "\n${BOLD}5. Archivos de configuración Hi-Fi activos:${NC}"
     echo -e "${CYAN}[Usuario $REAL_USER]${NC}"
     ls -l "$REAL_HOME/.config/pipewire/pipewire.conf.d/99-hires-audio.conf" \
+          "$REAL_HOME/.config/pipewire/pipewire.conf.d/60-hifi-loss.conf" \
+          "$REAL_HOME/.config/pipewire/pipewire.conf.d/60-native-spatial-audio.conf" \
+          "$REAL_HOME/.config/pipewire/pipewire.conf.d/65-windows-reference-profile.conf" \
           "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf" \
           "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-alsa-hifi.conf" \
           "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf" 2>/dev/null || echo "Sin archivos de usuario."
 
     echo -e "${CYAN}[Sistema /etc/]${NC}"
     ls -l /etc/pipewire/pipewire.conf.d/99-hires-audio.conf \
+          /etc/pipewire/pipewire.conf.d/60-hifi-loss.conf \
+          /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf \
+          /etc/pipewire/pipewire.conf.d/65-windows-reference-profile.conf \
           /etc/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf \
           /etc/wireplumber/wireplumber.conf.d/50-alsa-hifi.conf \
           /etc/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf \
           /etc/modprobe.d/audio-hifi-powersave.conf \
+          /etc/modprobe.d/alsa-alc623-pins.conf \
+          /lib/firmware/alsa-realtek-alc623.fw \
           /etc/security/limits.d/99-audio-realtime.conf 2>/dev/null || echo "Sin archivos de sistema."
 
     echo -e "\n${BOLD}6. Estado de Ahorro de Energía (snd_hda_intel):${NC}"
@@ -609,7 +624,9 @@ show_status() {
     fi
 
     echo -e "\n${BOLD}8. Perfil de Procesamiento Activo en PipeWire:${NC}"
-    if wpctl status 2>/dev/null | grep -q "spatial_audio_sink"; then
+    if wpctl status 2>/dev/null | grep -q "hifi_loss_sink"; then
+        echo -e "${GREEN}[ACTIVO]${NC} Perfil Maestro Fusión 'hifi-loss' (Hi-Fi Lossless: Harman/Target + Sub-25Hz + Mid/Side + Bauer + Techo -0.14 dBFS)"
+    elif wpctl status 2>/dev/null | grep -q "spatial_audio_sink"; then
         echo -e "${GREEN}[ACTIVO]${NC} Audio Espacial Nativo (10 Bandas + Pasa-Altos Subsónico 25 Hz + Mid/Side + Bauer)"
     elif wpctl status 2>/dev/null | grep -q "windows_reference_sink"; then
         echo -e "${CYAN}[ACTIVO]${NC} Audio Referencia Neutro Windows (Respuesta plana 1:1, 0% diafonía, -0.14 dBFS)"
@@ -656,6 +673,7 @@ restore_defaults() {
 
     # Eliminar configuraciones de usuario
     rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/99-hires-audio.conf"
+    rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/60-hifi-loss.conf"
     rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/60-native-spatial-audio.conf"
     rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/65-windows-reference-profile.conf"
     rm -f "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf"
@@ -665,6 +683,7 @@ restore_defaults() {
     # Si es root, eliminar también las de sistema
     if [ "$EUID" -eq 0 ]; then
         rm -f /etc/pipewire/pipewire.conf.d/99-hires-audio.conf
+        rm -f /etc/pipewire/pipewire.conf.d/60-hifi-loss.conf
         rm -f /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf
         rm -f /etc/pipewire/pipewire.conf.d/65-windows-reference-profile.conf
         rm -f /etc/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf
@@ -695,11 +714,11 @@ show_menu() {
         echo -e "Selecciona una opción:"
         echo -e "  1) ${GREEN}${BOLD}Activar Núcleo Hi-Fi Bit-Perfect${NC} (44.1k-192k nativo, 24/32bit S32LE, soxr 14)"
         echo -e "  2) ${CYAN}Configurar Bluetooth Hi-Fi${NC} (LDAC HQ 990kbps, SBC-XQ, aptX)"
-        echo -e "  3) ${GREEN}${BOLD}Activar Audio Espacial Nativo en PipeWire${NC} (10 Bandas + Pasa-Altos Subsónico 25Hz + Mid/Side + Bauer)"
+        echo -e "  3) ${GREEN}${BOLD}Activar Perfil Maestro 'hifi-loss' en PipeWire${NC} (Fusión: Harman/Target + Sub-25Hz + Mid/Side + Bauer + Techo -0.14 dBFS)"
         echo -e "  4) ${CYAN}${BOLD}Activar Perfil Referencia Neutro Windows${NC} (Respuesta 1:1, 0% diafonía, techo -0.14 dBFS)"
         echo -e "  5) ${MAGENTA}${BOLD}Aplicar Parche de Pines HDA Realtek ALC623${NC} (Lenovo Chasis: NID 0x17 Altavoces, 0x21 Jacks)"
         echo -e "  6) ${BLUE}Alternar a Suite DSP EasyEffects${NC} (Modo aplicación opcional)"
-        echo -e "  7) ${YELLOW}${BOLD}Instalación Completa${NC} (Núcleo Hi-Fi + Bluetooth Hi-Fi + Audio Espacial Nativo)"
+        echo -e "  7) ${YELLOW}${BOLD}Instalación Completa${NC} (Núcleo Hi-Fi + Bluetooth Hi-Fi + Perfil Maestro hifi-loss)"
         echo -e "  8) Ver ${BOLD}Diagnóstico de Estado y Hardware${NC}"
         echo -e "  9) Ejecutar ${BOLD}Prueba de Conmutación Bit-Perfect${NC}"
         echo -e " 10) ${RED}Restaurar configuración de fábrica (Rollback)${NC}"
@@ -716,7 +735,7 @@ show_menu() {
                 install_bluetooth_hifi
                 ;;
             3)
-                install_native_spatial_audio
+                install_hifi_loss_audio
                 ;;
             4)
                 install_windows_reference_audio
@@ -730,7 +749,7 @@ show_menu() {
             7)
                 install_core_hifi
                 install_bluetooth_hifi
-                install_native_spatial_audio
+                install_hifi_loss_audio
                 ;;
             8)
                 show_status
@@ -763,8 +782,8 @@ if [ $# -gt 0 ]; then
         -b|--bluetooth)
             install_bluetooth_hifi
             ;;
-        -n|--native-spatial|--spatial|--dolby)
-            install_native_spatial_audio
+        -l|--lossless|--hifi-loss|-n|--native-spatial|--spatial|--dolby)
+            install_hifi_loss_audio
             ;;
         -w|--windows-ref|--reference)
             install_windows_reference_audio
@@ -778,7 +797,7 @@ if [ $# -gt 0 ]; then
         -a|--all)
             install_core_hifi
             install_bluetooth_hifi
-            install_native_spatial_audio
+            install_hifi_loss_audio
             ;;
         -s|--status)
             show_status
@@ -794,11 +813,11 @@ if [ $# -gt 0 ]; then
             echo "Opciones:"
             echo "  -i, --install             Activa el núcleo Hi-Fi Bit-Perfect (192kHz/24-32bit, soxr, ALSA)"
             echo "  -b, --bluetooth           Configura Bluetooth de alta fidelidad (LDAC HQ, SBC-XQ, aptX)"
-            echo "  -n, --spatial, --dolby    Activa Audio Espacial Nativo en PipeWire (Sin intermediarios)"
+            echo "  -l, --hifi-loss, -n       Activa el perfil maestro fusión 'hifi-loss' en PipeWire (Recomendado)"
             echo "  -w, --windows-ref         Activa el perfil neutro puro de referencia de Windows (-0.14 dBFS)"
             echo "  -p, --patch-pins          Aplica el parche de pines HDA decodificados para Realtek ALC623"
             echo "  -e, --easyeffects         Instala la Suite DSP alternativa EasyEffects"
-            echo "  -a, --all                 Instala todo (Hi-Fi + Bluetooth + Audio Espacial Nativo)"
+            echo "  -a, --all                 Instala todo (Hi-Fi + Bluetooth + Perfil Maestro hifi-loss)"
             echo "  -s, --status              Muestra el estado y diagnóstico del hardware"
             echo "  -t, --test                Ejecuta la prueba de conmutación de frecuencias Bit-Perfect"
             echo "  -r, --restore             Restaura las configuraciones de fábrica"

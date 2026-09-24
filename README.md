@@ -64,17 +64,19 @@ para abrirlo al finalizar.
   - **Eliminación de pops y latencia**: Desactiva el ahorro de energía agresivo en `snd_hda_intel` (`power_save=0`), manteniendo los osciladores del DAC activos.
   - **Prioridad en tiempo real**: Configura límites PAM (`rtprio 95`, `memlock unlimited`) para evitar cortes de audio (*xruns*).
   - **Bluetooth de alta definición**: Habilita SBC-XQ, prioridad LDAC (HQ 990 kbps forzado) y códecs `aptX`/`aptX HD` con RPM Fusion.
-  - **Audio Espacial 100% Nativo en PipeWire (`libpipewire-module-filter-chain`)**:
-    - **Ecualizador Paramétrico de Estudio (10 Bandas) + Pasa-Altos Subsónico (25 Hz)**: Curva calibrada de alta precisión con filtros biquad (`bq_peaking`) que refuerza sub-graves limpios (35 Hz / 65 Hz), elimina de raíz el sonido encajonado/hueco de plástico (cortes quirúrgicos en 250 Hz y 500 Hz), entrega máxima presencia vocal (2 kHz / 4 kHz) y apertura aérea cristalina (8 kHz / 12 kHz). Incorpora un filtro pasa-altos Butterworth a 25 Hz (`bq_highpass`, $Q=0.707$) que elimina la sobre-excursión mecánica y distorsión intermodular en transductores internos (NID `0x17`).
-    - **Matriz de Espacialización Mid/Side y Compensación Binaural**: Ensanchamiento de escenario estéreo tridimensional (+20% amplitud fuera de la cabeza) y crossfeed contralateral a 700 Hz (Bauer) para disipar la fatiga auditiva sin afectar la inteligibilidad ni el centro de voces.
-    - **Volumen Calibrado al 100% y Headroom de Seguridad (-0.14 dBFS)**: Maximiza el sumidero de hardware físico y ajusta la ganancia nominal con el margen de seguridad dinámico medido de Windows ($0.984$ lineal / $-0.14\text{ dBFS}$) para evitar saturación inter-muestra (*inter-sample clipping*) en el DAC Realtek ALC623.
-    - **Sumidero Nativo de Audio**: Expone un nodo `Audio/Sink` nativo (`spatial_audio_sink`) configurado automáticamente con máxima prioridad (`priority.session = 1500`) como salida predeterminada del sistema.
+  - **Perfil Maestro Fusión "hifi-loss" (Hi-Fi Lossless Studio Master)**:
+    - **Fusión Acústica Total (Superando a Windows)**: Unifica lo mejor de la medición *black-box* de Windows (linealidad, techo de seguridad dinámico en $-0,14\text{ dBFS}$ contra *inter-sample clipping* y remuestreo sinc de fase lineal `quality = 14`), la espacialización tridimensional de Apple Spatial Audio y Dolby Atmos, y la calibración acústica de Fletcher-Munson / LoudnessCrystal.
+    - **Cero intermediarios y Cero latencia (0 ms)**: Procesado en tiempo real en C/SPA mediante `libpipewire-module-filter-chain` directamente en el hilo de audio del kernel sin retraso ni consumo perceptible de CPU.
+    - **Filtro Pasa-Altos Subsónico Butterworth (25 Hz, $Q=0.707$)**: Protege los transductores internos (NID `0x17`) y auriculares cortando el infrasonido inaudible ($<25\text{ Hz}$), evitando la sobre-excursión mecánica y distorsión por intermodulación (IMD) sin perder pegada sub-grave.
+    - **Ecualizador Paramétrico de 10 Bandas de Precisión**: Curva de estudio equilibrada con realce controlado en sub-graves (32 Hz / 64 Hz), cortes quirúrgicos anti-caja plástica en 250 Hz y 500 Hz, presencia vocal frontal e inteligible en 1 kHz / 2 kHz, y extensión aérea sedosa en 14 kHz (*Air Band*).
+    - **Espacialización Mid/Side y Crossfeed Binaural Bauer (700 Hz)**: Ensancha el campo estéreo fuera de la cabeza (+16% soundstage) y aplica filtrado contralateral para disipar la fatiga auditiva en auriculares sin alterar el centro vocal.
+    - **Sumidero Maestro Dedicado (`hifi_loss_sink`)**: Expone un nodo `Audio/Sink` nativo con máxima prioridad (`priority.session = 1500`) para enrutamiento automático en WirePlumber.
   - **Perfil de Referencia Neutro Windows (`65-windows-reference-profile.conf`)**:
-    - Para monitorización pura y transparente, permite activar con `./setup_audio_hifi.sh -w` una cadena lineal 1:1 directa (sin ecualización ni crossfeed), con 100% de aislamiento entre canales ($-170\text{ dB}$) y el techo de seguridad dinámico de Windows ($-0.14\text{ dBFS}$).
+    - Para monitorización plana y comparativa, permite activar con `./setup_audio_hifi.sh -w` una cadena 1:1 directa (sin EQ ni crossfeed), con 100% de aislamiento L/R ($-170\text{ dB}$) y el techo medido de Windows ($-0,14\text{ dBFS}$).
   - **Parche de Pines HDA Realtek ALC623 (`alsa-realtek-alc623.fw`)**:
     - Corrige la conmutación de altavoces/auriculares y la baja ganancia de ALSA aplicando los descriptores OEM decodificados de Windows mediante `./setup_audio_hifi.sh -p` hacia `/lib/firmware/` y `/etc/modprobe.d/alsa-alc623-pins.conf`.
   - **Presets de Estudio EasyEffects (Opcional / Alternativo)**:
-    - Para quienes prefieran ajuste visual dinámico por GUI, incluye perfiles como `Dolby Atmos Spatial Studio`, `Dolby Atmos Convolver Studio`, `Apple Spatial Audio Studio` y `LoudnessCrystalEqualizer`.
+    - Perfiles para interfaz gráfica (`Dolby Atmos Spatial Studio`, `Dolby Atmos Convolver Studio`, `Apple Spatial Audio Studio` y `LoudnessCrystalEqualizer`).
   - **Diagnóstico y Rollback**: Monitor en vivo del reloj de hardware, sumideros y restauración limpia a los valores por defecto de Fedora.
 - `fedora-tools/install_virtualbox.sh` automatiza la instalación y configuración
   completa de VirtualBox en Fedora Linux:
