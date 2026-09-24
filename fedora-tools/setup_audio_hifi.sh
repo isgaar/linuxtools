@@ -664,7 +664,7 @@ show_status() {
     local default_sink
     default_sink=$(pactl get-default-sink 2>/dev/null || wpctl status 2>/dev/null | grep -A 2 "Default Configured Devices" | grep "Audio/Sink" | awk '{print $NF}')
     if [ "$default_sink" = "hifi_loss_sink" ]; then
-        echo -e "${GREEN}[ACTIVO Y PREDETERMINADO]${NC} Perfil Maestro Fusión 'hifi-loss' (Hi-Fi Lossless: Harman/Target + Sub-25Hz + Mid/Side + Bauer + Techo -0.14 dBFS)"
+        echo -e "${GREEN}[ACTIVO Y PREDETERMINADO]${NC} Perfil Maestro Fusión 'hifi-loss' (Hi-Fi Lossless: Harman/Mastering + Sub-25Hz Butterworth + Fase Estéreo Pura 1:1 + Techo -0.14 dBFS)"
     elif wpctl status 2>/dev/null | grep -q "hifi_loss_sink"; then
         echo -e "${YELLOW}[CARGADO PERO NO PREDETERMINADO]${NC} Perfil 'hifi-loss' está en memoria, pero el destino actual es: $default_sink"
     elif [ "$default_sink" = "spatial_audio_sink" ]; then
@@ -758,7 +758,7 @@ show_menu() {
         echo -e "Selecciona una opción:"
         echo -e "  1) ${GREEN}${BOLD}Activar Núcleo Hi-Fi Bit-Perfect${NC} (44.1k-192k nativo, 24/32bit S32LE, soxr 14)"
         echo -e "  2) ${CYAN}Configurar Bluetooth Hi-Fi${NC} (LDAC HQ 990kbps, SBC-XQ, aptX)"
-        echo -e "  3) ${GREEN}${BOLD}Activar Perfil Maestro 'hifi-loss' en PipeWire${NC} (Fusión: Harman/Target + Sub-25Hz + Mid/Side + Bauer + Techo -0.14 dBFS)"
+        echo -e "  3) ${GREEN}${BOLD}Activar Perfil Maestro 'hifi-loss' en PipeWire${NC} (Fusión: Harman/Mastering + Sub-25Hz + Fase Estéreo Pura 1:1 + Techo -0.14 dBFS)"
         echo -e "  4) ${CYAN}${BOLD}Activar Perfil Referencia Neutro Windows${NC} (Respuesta 1:1, 0% diafonía, techo -0.14 dBFS)"
         echo -e "  5) ${MAGENTA}${BOLD}Aplicar Parche de Pines HDA Realtek ALC623${NC} (Lenovo Chasis: NID 0x17 Altavoces, 0x21 Jacks)"
         echo -e "  6) ${BLUE}Alternar a Suite DSP EasyEffects${NC} (Modo aplicación opcional)"
