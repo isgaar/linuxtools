@@ -94,6 +94,7 @@ para abrirlo al finalizar.
   - **Monitor y Diagnóstico en Vivo**: Inspecciona en tiempo real el bus de usuario MPRIS, metadatos (`xesam:title`, `xesam:artist`), duración formateada y posición actual.
   - **Reversión (Rollback)**: Permite restaurar limpiamente la configuración original de perfiles y políticas del sistema.
 - `measurements/` y `TODO/WINDOWS_AUDIO_PROFILE.md`: Suite de medición acústica de caja negra (*black-box*) y reporte técnico exhaustivo para replicación y comparación objetiva entre Windows (Realtek ALC623) y Fedora Linux (PipeWire / ALSA). Incluye parche de pines HDA (`fedora-tools/alsa-realtek-alc623.fw`) y perfil neutro (`fedora-tools/pipewire/65-windows-reference-profile.conf`).
+- `TODO/HIFI_LOSS_ARCHITECTURE.md`: Documento de diseño técnico y referencia de la arquitectura nativa del Perfil Maestro Fusión `hifi-loss`. Detalla la integración en las entrañas de PipeWire C/SPA y WirePlumber Lua, la erradicación de intermediarios, el margen anti-clipping True-Peak de $-0,14\text{ dBFS}$ y el enrutamiento reactivo en caliente para USB-C, DisplayPort y Analógico.
 
 ## Requisitos
 
