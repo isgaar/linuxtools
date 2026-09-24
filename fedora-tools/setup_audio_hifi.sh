@@ -372,32 +372,18 @@ install_hifi_loss_audio() {
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" pactl move-sink-input "$input_id" hifi_loss_sink 2>/dev/null || true
         done
 
-        # 5. Instalar servicio en las entrañas del sistema (hifi-loss-router para DP, USB-C y Analógico)
-        log_info "Instalando enrutador dinámico en las entrañas del sistema (hifi-loss-router)..."
-        cp -f "$SCRIPT_DIR/hifi-loss-router.py" /usr/local/bin/hifi-loss-router
-        chmod +x /usr/local/bin/hifi-loss-router
+        # 5. Instalar gancho nativo en las entrañas de WirePlumber (C/Lua runtime sin servicios externos)
+        log_info "Instalando gancho nativo en las entrañas de WirePlumber (C/Lua Engine)..."
+        mkdir -p /etc/wireplumber/scripts /etc/wireplumber/wireplumber.conf.d /etc/pipewire/pipewire-pulse.conf.d
+        cp -f "$SCRIPT_DIR/wireplumber/hifi-loss-router.lua" /etc/wireplumber/scripts/hifi-loss-router.lua
+        cp -f "$SCRIPT_DIR/wireplumber/60-hifi-loss-router.conf" /etc/wireplumber/wireplumber.conf.d/60-hifi-loss-router.conf
+        cp -f "$SCRIPT_DIR/pipewire/60-hifi-loss-routing.conf" /etc/pipewire/pipewire-pulse.conf.d/60-hifi-loss-routing.conf
 
-        mkdir -p /etc/systemd/user
-        cat > /etc/systemd/user/hifi-loss-router.service << 'SVCEOF'
-[Unit]
-Description=Hi-Fi Lossless Dynamic Hardware Audio Router
-Documentation=https://github.com/isgaar/linuxtools
-After=pipewire.service wireplumber.service pipewire-pulse.service
-PartOf=pipewire.service
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/hifi-loss-router
-Restart=always
-RestartSec=2s
-
-[Install]
-WantedBy=default.target
-SVCEOF
-
-        # Habilitar para el usuario real
-        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" systemctl --user daemon-reload 2>/dev/null || true
-        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" systemctl --user enable --now hifi-loss-router.service 2>/dev/null || true
+        mkdir -p "$REAL_HOME/.config/wireplumber/scripts" "$REAL_HOME/.config/wireplumber/wireplumber.conf.d" "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d"
+        cp -f "$SCRIPT_DIR/wireplumber/hifi-loss-router.lua" "$REAL_HOME/.config/wireplumber/scripts/hifi-loss-router.lua"
+        cp -f "$SCRIPT_DIR/wireplumber/60-hifi-loss-router.conf" "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/60-hifi-loss-router.conf"
+        cp -f "$SCRIPT_DIR/pipewire/60-hifi-loss-routing.conf" "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d/60-hifi-loss-routing.conf"
+        chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/wireplumber" "$REAL_HOME/.config/pipewire" 2>/dev/null || true
     else
         sink_id=$(wpctl status 2>/dev/null | grep "hifi_loss_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
         if [ -n "$sink_id" ]; then
@@ -416,34 +402,18 @@ SVCEOF
             pactl move-sink-input "$input_id" hifi_loss_sink 2>/dev/null || true
         done
 
-        # 5. Instalar servicio de usuario
-        log_info "Instalando enrutador dinámico (hifi-loss-router)..."
-        mkdir -p "$REAL_HOME/.local/bin" "$REAL_HOME/.config/systemd/user"
-        cp -f "$SCRIPT_DIR/hifi-loss-router.py" "$REAL_HOME/.local/bin/hifi-loss-router"
-        chmod +x "$REAL_HOME/.local/bin/hifi-loss-router"
-
-        cat > "$REAL_HOME/.config/systemd/user/hifi-loss-router.service" << 'SVCEOF'
-[Unit]
-Description=Hi-Fi Lossless Dynamic Hardware Audio Router
-Documentation=https://github.com/isgaar/linuxtools
-After=pipewire.service wireplumber.service pipewire-pulse.service
-PartOf=pipewire.service
-
-[Service]
-Type=simple
-ExecStart=%h/.local/bin/hifi-loss-router
-Restart=always
-RestartSec=2s
-
-[Install]
-WantedBy=default.target
-SVCEOF
-
-        systemctl --user daemon-reload 2>/dev/null || true
-        systemctl --user enable --now hifi-loss-router.service 2>/dev/null || true
+        # 5. Instalar gancho nativo en las entrañas de WirePlumber del usuario
+        log_info "Instalando gancho nativo en las entrañas de WirePlumber (C/Lua Engine)..."
+        mkdir -p "$REAL_HOME/.config/wireplumber/scripts" "$REAL_HOME/.config/wireplumber/wireplumber.conf.d" "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d"
+        cp -f "$SCRIPT_DIR/wireplumber/hifi-loss-router.lua" "$REAL_HOME/.config/wireplumber/scripts/hifi-loss-router.lua"
+        cp -f "$SCRIPT_DIR/wireplumber/60-hifi-loss-router.conf" "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/60-hifi-loss-router.conf"
+        cp -f "$SCRIPT_DIR/pipewire/60-hifi-loss-routing.conf" "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d/60-hifi-loss-routing.conf"
     fi
 
-    log_success "¡Perfil Maestro 'hifi-loss' y enrutador dinámico activados en las entrañas de PipeWire!"
+    # Reiniciar WirePlumber para compilar y cargar el gancho nativo en memoria
+    restart_user_services
+
+    log_success "¡Perfil Maestro 'hifi-loss' integrado en las entrañas nativas de PipeWire y WirePlumber!"
 }
 
 # Alias para compatibilidad hacia atrás
