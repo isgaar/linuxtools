@@ -544,12 +544,53 @@ install_antigravity() {
     fix_opt_permissions "$opt_dir"
     ensure_antigravity_config_dir
     
-    # Buscar ícono
-    local icon_path
-    icon_path=$(find "$opt_dir" -maxdepth 4 \( -name "*.png" -o -name "*.svg" \) | grep -i "icon\|logo\|app" | head -n 1 || true)
-    if [ -z "$icon_path" ]; then
-        icon_path=$(find "$opt_dir" -maxdepth 4 -name "*.png" | head -n 1 || true)
+    # Buscar ícono en la instalación existente
+    local icon_path=""
+    if [ -f "$opt_dir/antigravity.png" ]; then
+        icon_path="$opt_dir/antigravity.png"
+    else
+        icon_path=$(find "$opt_dir" -maxdepth 4 \( -name "*.png" -o -name "*.svg" \) 2>/dev/null | grep -i "icon\|logo\|app" | head -n 1 || true)
+        if [ -z "$icon_path" ]; then
+            icon_path=$(find "$opt_dir" -maxdepth 4 -name "*.png" 2>/dev/null | head -n 1 || true)
+        fi
     fi
+
+    # Si el tarball no proporciona ícono, usar el ícono oficial incluido en el repositorio
+    local repo_icon=""
+    for icon_candidate in "$SCRIPT_DIR/src/antigravity.png" "$SCRIPT_DIR/src/antigravity-ide.png"; do
+        if [ -f "$icon_candidate" ]; then
+            repo_icon="$icon_candidate"
+            break
+        fi
+    done
+
+    if [ -n "$repo_icon" ]; then
+        # Copiar el ícono a la carpeta de la aplicación en /opt
+        if [ ! -f "$opt_dir/antigravity.png" ]; then
+            sudo cp "$repo_icon" "$opt_dir/antigravity.png" 2>/dev/null || true
+            sudo chmod 644 "$opt_dir/antigravity.png" 2>/dev/null || true
+            sudo chown root:root "$opt_dir/antigravity.png" 2>/dev/null || true
+        fi
+        [ -f "$opt_dir/antigravity.png" ] && icon_path="$opt_dir/antigravity.png"
+
+        # Registrar en el tema de iconos hicolor del usuario para soporte de WM/Wayland/Niri/docks
+        local user_icon_dir="$HOME/.local/share/icons/hicolor/256x256/apps"
+        mkdir -p "$user_icon_dir" 2>/dev/null || true
+        cp "$repo_icon" "$user_icon_dir/antigravity-ide.png" 2>/dev/null || true
+
+        # Registrar en pixmaps de usuario y sistema si existe
+        local user_pixmaps="$HOME/.local/share/pixmaps"
+        mkdir -p "$user_pixmaps" 2>/dev/null || true
+        cp "$repo_icon" "$user_pixmaps/antigravity-ide.png" 2>/dev/null || true
+
+        if [ -d "/usr/share/pixmaps" ]; then
+            sudo cp "$repo_icon" "/usr/share/pixmaps/antigravity-ide.png" 2>/dev/null || true
+            sudo chmod 644 "/usr/share/pixmaps/antigravity-ide.png" 2>/dev/null || true
+        fi
+
+        log_ok "Icono de Antigravity IDE configurado correctamente."
+    fi
+
     if [ -z "$icon_path" ]; then
         icon_path="application-x-executable"
     fi
@@ -580,6 +621,7 @@ EOF
     rm -f "$DESKTOP_DIR/antigravity.desktop" 2>/dev/null || true
     
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+    gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
     
     log_ok "¡Antigravity IDE configurado correctamente!"
 }
