@@ -382,6 +382,10 @@ install_hifi_loss_audio() {
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" pactl move-sink-input "$input_id" hifi_loss_sink 2>/dev/null || true
         done
 
+        # ESTABLECER VOLUMEN DEL SINK hifi_loss_sink AL 100% PARA CORREGIR VOLUMEN BAJO EN HDMI
+        log_info "Estableciendo volumen de hifi_loss_sink al 100% para corregir volumen bajo en salida HDMI..."
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" pactl set-sink-volume hifi_loss_sink 100% 2>/dev/null || true
+
         # 5. Instalar gancho nativo en las entrañas de WirePlumber (C/Lua runtime sin servicios externos)
         log_info "Instalando gancho nativo en las entrañas de WirePlumber (C/Lua Engine)..."
         mkdir -p /etc/wireplumber/scripts /etc/wireplumber/wireplumber.conf.d /etc/pipewire/pipewire-pulse.conf.d
@@ -411,6 +415,10 @@ install_hifi_loss_audio() {
         for input_id in $(pactl list short sink-inputs 2>/dev/null | awk '$3 != "-" {print $1}'); do
             pactl move-sink-input "$input_id" hifi_loss_sink 2>/dev/null || true
         done
+
+        # ESTABLECER VOLUMEN DEL SINK hifi_loss_sink AL 100% PARA CORREGIR VOLUMEN BAJO EN HDMI
+        log_info "Estableciendo volumen de hifi_loss_sink al 100% para corregir volumen bajo en salida HDMI..."
+        pactl set-sink-volume hifi_loss_sink 100% 2>/dev/null || true
 
         # 5. Instalar gancho nativo en las entrañas de WirePlumber del usuario
         log_info "Instalando gancho nativo en las entrañas de WirePlumber (C/Lua Engine)..."
@@ -769,12 +777,11 @@ show_menu() {
         echo -e "  ${YELLOW}${BOLD}=== OPCIÓN RECOMENDADA (TODO EN UNO) ===${NC}"
         echo -e "  7) ${YELLOW}${BOLD}Instalación Completa${NC} -> Configura todo de una vez (Audio HD + Bluetooth HD + Perfil de sonido)\n"
         echo -e "  ${CYAN}${BOLD}=== CONFIGURACIONES INDIVIDUALES ===${NC}"
-        echo -e "  1) ${GREEN}${BOLD}Audio de Alta Fidelidad (Bit-Perfect)${NC} -> Máxima calidad 24/32-bit sin pérdidas para cable, USB y HDMI"
-        echo -e "  2) ${CYAN}Bluetooth de Alta Calidad${NC} -> Activa códecs HD (LDAC, aptX, SBC-XQ) para audífonos inalámbricos"
-        echo -e "  3) ${GREEN}${BOLD}Perfil de Sonido Optimizado 'hifi-loss'${NC} -> Mejores graves, voces claras y protección anti-distorsión"
-        echo -e "  4) ${CYAN}Perfil Neutro de Referencia${NC} -> Sonido plano de estudio sin ecualizar (idéntico a Windows)"
-        echo -e "  5) ${MAGENTA}Parche para Equipos Lenovo (ALC623)${NC} -> Corrige altavoces internos o jack 3.5mm que no suenan"
-        echo -e "  6) ${BLUE}Ecualizador Gráfico EasyEffects${NC} -> Instala app con ventana visual para ajustar el sonido a mano\n"
+        echo -e "  1) ${GREEN}${BOLD}Configurar Audio Hi-Fi / Bit-Perfect & Audio Espacial Nativo${NC} -> Mapeo de audio de Windows + mejora espacial Lossless"
+        echo -e "  2) ${GREEN}${BOLD}Audio de Alta Fidelidad (Bit-Perfect)${NC} -> Máxima calidad 24/32-bit sin pérdidas para cable, USB y HDMI"
+        echo -e "  3) ${CYAN}Bluetooth de Alta Calidad${NC} -> Activa códecs HD (LDAC, aptX, SBC-XQ) para audífonos inalámbricos"
+        echo -e "  4) ${MAGENTA}Parche para Equipos Lenovo (ALC623)${NC} -> Corrige altavoces internos o jack 3.5mm que no suenan"
+        echo -e "  5) ${BLUE}Ecualizador Gráfico EasyEffects${NC} -> Instala app con ventana visual para ajustar el sonido a mano\n"
         echo -e "  ${WHITE}${BOLD}=== HERRAMIENTAS Y PRUEBAS ===${NC}"
         echo -e "  8) Ver Diagnóstico y Estado -> Muestra tarjetas de sonido detectadas y perfil activo"
         echo -e "  9) Probar Sonido -> Reproduce tonos de prueba en diferentes calidades"
@@ -786,38 +793,36 @@ show_menu() {
 
         case "$choice" in
             1)
-                install_core_hifi
+                install_windows_reference_audio
+                install_hifi_loss_audio
                 ;;
             2)
-                install_bluetooth_hifi
+                install_core_hifi
                 ;;
             3)
-                install_hifi_loss_audio
+                install_bluetooth_hifi
                 ;;
             4)
-                install_windows_reference_audio
-                ;;
-            5)
                 install_alc623_pin_patch
                 ;;
-            6)
+            5)
                 install_dsp_suite
                 ;;
-            7)
+            6)
                 install_core_hifi
                 install_bluetooth_hifi
                 install_hifi_loss_audio
                 ;;
-            8)
+            7)
                 show_status
                 ;;
-            9)
+            8)
                 run_bitperfect_test
                 ;;
-            10)
+            9)
                 restore_defaults
                 ;;
-            11)
+            10)
                 echo "¡Hasta luego!"
                 exit 0
                 ;;
