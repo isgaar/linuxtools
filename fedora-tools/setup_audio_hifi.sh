@@ -243,6 +243,7 @@ EOF
     log_info "Calibrando mezclador ALSA a 0 dB de ganancia digital (Bit-Perfect)..."
     for card_num in 0 1 2; do
         if [ -d "/proc/asound/card$card_num" ]; then
+            # Controles analógicos existentes
             amixer -c "$card_num" sset PCM 100% 2>/dev/null || true
             amixer -c "$card_num" sset PCM 255 2>/dev/null || true
             amixer -c "$card_num" sset Master 100% unmute 2>/dev/null || true
@@ -250,6 +251,15 @@ EOF
             amixer -c "$card_num" sset Headphone 100% unmute 2>/dev/null || true
             amixer -c "$card_num" sset "Line Out" 100% unmute 2>/dev/null || true
             amixer -c "$card_num" sset "Auto-Mute Mode" "Disabled" 2>/dev/null || true
+
+            # Controles digitales HDMI/IEC958 para solución de volumen bajo en HDMI
+            amixer -c "$card_num" sset IEC958 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "IEC958 Default PCM" 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset HDMI 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "Digital" 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "S/PDIF" 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "S/PDIF,0" 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "S/PDIF,1" 100% unmute 2>/dev/null || true
         fi
     done
 
@@ -755,17 +765,20 @@ show_menu() {
         echo -e "${BOLD}             Fedora Linux (PipeWire 1.6+)            ${NC}"
         echo -e "${CYAN}======================================================${NC}"
         echo -e "Modo actual: ${BOLD}${TARGET_MODE}${NC} ($( [ "$TARGET_MODE" = "system" ] && echo "/etc/ (global)" || echo "$REAL_HOME/.config/ (usuario)" ))"
-        echo -e "Selecciona una opción:"
-        echo -e "  1) ${GREEN}${BOLD}Activar Núcleo Hi-Fi Bit-Perfect${NC} (44.1k-192k nativo, 24/32bit S32LE, soxr 14)"
-        echo -e "  2) ${CYAN}Configurar Bluetooth Hi-Fi${NC} (LDAC HQ 990kbps, SBC-XQ, aptX)"
-        echo -e "  3) ${GREEN}${BOLD}Activar Perfil Maestro 'hifi-loss' en PipeWire${NC} (Fusión: Harman/Mastering + Sub-25Hz + Fase Estéreo Pura 1:1 + Techo -0.14 dBFS)"
-        echo -e "  4) ${CYAN}${BOLD}Activar Perfil Referencia Neutro Windows${NC} (Respuesta 1:1, 0% diafonía, techo -0.14 dBFS)"
-        echo -e "  5) ${MAGENTA}${BOLD}Aplicar Parche de Pines HDA Realtek ALC623${NC} (Lenovo Chasis: NID 0x17 Altavoces, 0x21 Jacks)"
-        echo -e "  6) ${BLUE}Alternar a Suite DSP EasyEffects${NC} (Modo aplicación opcional)"
-        echo -e "  7) ${YELLOW}${BOLD}Instalación Completa${NC} (Núcleo Hi-Fi + Bluetooth Hi-Fi + Perfil Maestro hifi-loss)"
-        echo -e "  8) Ver ${BOLD}Diagnóstico de Estado y Hardware${NC}"
-        echo -e "  9) Ejecutar ${BOLD}Prueba de Conmutación Bit-Perfect${NC}"
-        echo -e " 10) ${RED}Restaurar configuración de fábrica (Rollback)${NC}"
+        echo -e "Selecciona una opción:\n"
+        echo -e "  ${YELLOW}${BOLD}=== OPCIÓN RECOMENDADA (TODO EN UNO) ===${NC}"
+        echo -e "  7) ${YELLOW}${BOLD}Instalación Completa${NC} -> Configura todo de una vez (Audio HD + Bluetooth HD + Perfil de sonido)\n"
+        echo -e "  ${CYAN}${BOLD}=== CONFIGURACIONES INDIVIDUALES ===${NC}"
+        echo -e "  1) ${GREEN}${BOLD}Audio de Alta Fidelidad (Bit-Perfect)${NC} -> Máxima calidad 24/32-bit sin pérdidas para cable, USB y HDMI"
+        echo -e "  2) ${CYAN}Bluetooth de Alta Calidad${NC} -> Activa códecs HD (LDAC, aptX, SBC-XQ) para audífonos inalámbricos"
+        echo -e "  3) ${GREEN}${BOLD}Perfil de Sonido Optimizado 'hifi-loss'${NC} -> Mejores graves, voces claras y protección anti-distorsión"
+        echo -e "  4) ${CYAN}Perfil Neutro de Referencia${NC} -> Sonido plano de estudio sin ecualizar (idéntico a Windows)"
+        echo -e "  5) ${MAGENTA}Parche para Equipos Lenovo (ALC623)${NC} -> Corrige altavoces internos o jack 3.5mm que no suenan"
+        echo -e "  6) ${BLUE}Ecualizador Gráfico EasyEffects${NC} -> Instala app con ventana visual para ajustar el sonido a mano\n"
+        echo -e "  ${WHITE}${BOLD}=== HERRAMIENTAS Y PRUEBAS ===${NC}"
+        echo -e "  8) Ver Diagnóstico y Estado -> Muestra tarjetas de sonido detectadas y perfil activo"
+        echo -e "  9) Probar Sonido -> Reproduce tonos de prueba en diferentes calidades"
+        echo -e " 10) ${RED}Restaurar Sonido Original (Rollback)${NC} -> Deshace todas las configuraciones y vuelve a valores de fábrica"
         echo -e " 11) Salir"
         echo -e "${CYAN}------------------------------------------------------${NC}"
         echo -ne "Opción: "
@@ -855,16 +868,16 @@ if [ $# -gt 0 ]; then
         -h|--help)
             echo "Uso: $0 [opción]"
             echo "Opciones:"
-            echo "  -i, --install             Activa el núcleo Hi-Fi Bit-Perfect (192kHz/24-32bit, soxr, ALSA)"
-            echo "  -b, --bluetooth           Configura Bluetooth de alta fidelidad (LDAC HQ, SBC-XQ, aptX)"
-            echo "  -l, --hifi-loss, -n       Activa el perfil maestro fusión 'hifi-loss' en PipeWire (Recomendado)"
-            echo "  -w, --windows-ref         Activa el perfil neutro puro de referencia de Windows (-0.14 dBFS)"
-            echo "  -p, --patch-pins          Aplica el parche de pines HDA decodificados para Realtek ALC623"
-            echo "  -e, --easyeffects         Instala la Suite DSP alternativa EasyEffects"
-            echo "  -a, --all                 Instala todo (Hi-Fi + Bluetooth + Perfil Maestro hifi-loss)"
+            echo "  -a, --all                 Instalación Completa recomendada (Audio HD + Bluetooth HD + Perfil de sonido)"
+            echo "  -i, --install             Activa audio HD / Bit-Perfect (24/32-bit sin pérdidas para cable/USB/HDMI)"
+            echo "  -b, --bluetooth           Configura Bluetooth HD (LDAC HQ, aptX, SBC-XQ para audífonos)"
+            echo "  -l, --hifi-loss, -n       Activa perfil 'hifi-loss' (mejores graves, voces claras y anti-distorsión)"
+            echo "  -w, --windows-ref         Activa perfil neutro plano de referencia (estilo Windows sin retoques)"
+            echo "  -p, --patch-pins          Aplica parche de hardware para equipos Lenovo (Realtek ALC623)"
+            echo "  -e, --easyeffects         Instala suite gráfica EasyEffects (ecualizador con ventana)"
             echo "  -s, --status              Muestra el estado y diagnóstico del hardware"
-            echo "  -t, --test                Ejecuta la prueba de conmutación de frecuencias Bit-Perfect"
-            echo "  -r, --restore             Restaura las configuraciones de fábrica"
+            echo "  -t, --test                Ejecuta la prueba de frecuencias de sonido"
+            echo "  -r, --restore             Restaura el audio a valores originales de fábrica"
             echo "  -h, --help                Muestra esta ayuda"
             exit 0
             ;;
