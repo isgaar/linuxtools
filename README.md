@@ -29,6 +29,7 @@ También admite ejecución directa:
 ./instalar-apps.sh --easyeffects  # Audio Espacial alternativo mediante EasyEffects (GUI dinámico)
 ./instalar-apps.sh --gamepad      # Parche mandos Bluetooth/XInput (Steam, Lutris, Proton)
 ./instalar-apps.sh --browser-mpris# Parche multimedia para navegadores (timeline y posición en KDE Plasma)
+./instalar-apps.sh --debloat      # Desinstalar bloatware en Fedora (LibreOffice, Firefox, apps GNOME)
 ./instalar-apps.sh --fedora-tools # Menú de herramientas para Fedora
 ```
 
@@ -93,6 +94,13 @@ para abrirlo al finalizar.
   - **Soporte para Brave, Google Chrome y Chromium**: Registra manifiestos nativos y políticas para auto-instalación del complemento de KDE Plasma (`cimiefiiaegbelhefglklhhakcgmhkai`).
   - **Monitor y Diagnóstico en Vivo**: Inspecciona en tiempo real el bus de usuario MPRIS, metadatos (`xesam:title`, `xesam:artist`), duración formateada y posición actual.
   - **Reversión (Rollback)**: Permite restaurar limpiamente la configuración original de perfiles y políticas del sistema.
+- `fedora-tools/remove_bloatware.sh` permite desinstalar de forma limpia, modular y segura el bloatware preinstalado en Fedora:
+  - **LibreOffice Suite completa**: Writer, Calc, Impress, filtros, unoconv y todos los subpaquetes.
+  - **Mozilla Firefox**: Navegador y paquetes de idiomas preinstalados.
+  - **Apps accesorias de GNOME**: gnome-tour, gnome-maps, gnome-weather, gnome-contacts y mediawriter.
+  - **Seguridad**: Usa `--no-autoremove` para no eliminar dependencias de sistema críticas (como openssl o bibliotecas compartidas).
+  - **Detección de navegadores alternativos**: Verifica que Zen Browser, Chrome, Brave o Chromium estén disponibles antes de eliminar Firefox.
+  - **Diagnóstico**: Muestra el estado de todos los componentes detectados con `--status`.
 - `measurements/` y `TODO/WINDOWS_AUDIO_PROFILE.md`: Suite de medición acústica de caja negra (*black-box*) y reporte técnico exhaustivo para replicación y comparación objetiva entre Windows (Realtek ALC623) y Fedora Linux (PipeWire / ALSA). Incluye parche de pines HDA (`fedora-tools/alsa-realtek-alc623.fw`) y perfil neutro (`fedora-tools/pipewire/65-windows-reference-profile.conf`).
 - `TODO/HIFI_LOSS_ARCHITECTURE.md`: Documento de diseño técnico y referencia de la arquitectura nativa del Perfil Maestro Fusión `hifi-loss`. Detalla la integración en las entrañas de PipeWire C/SPA y WirePlumber Lua, la erradicación de intermediarios, el margen anti-clipping True-Peak de $-0,14\text{ dBFS}$ y el enrutamiento reactivo en caliente para USB-C, DisplayPort y Analógico.
 
