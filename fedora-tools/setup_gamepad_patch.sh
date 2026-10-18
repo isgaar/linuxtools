@@ -4,24 +4,25 @@
 # Compatible con Steam, Lutris, Wine, Proton y Emuladores
 # ==============================================================================
 # Problema que soluciona:
-#  - En Wine/Proton (winebus.sys), los mandos Bluetooth de Sony (DualShock 4 /
-#    DualSense) son tratados como dispositivos nativos 'hidraw', ignorando SDL
-#    y ocultándolos de la API XInput (emulación Xbox 360).
-#  - Esto causa que emuladores nativos como PCSX2 sí reconozcan el mando, pero
-#    juegos de Windows en Lutris o Steam (con GInput o XInput nativo) no detecten
-#    ningún mando a menos que se use un mando viejo genérico o de Xbox.
+#  - Steam Input puede crear un «Steam Virtual Gamepad». Si un juego externo se
+#    inicia desde Lutris mientras Steam está abierto, algunos juegos XInput
+#    (por ejemplo GTA SA con GInput) eligen ese dispositivo sin eventos en vez
+#    del mando físico.
+#  - Forzar HIDRAW/XInput de Sony globalmente no soluciona ese conflicto y
+#    afecta innecesariamente a Steam y a todos los juegos de Lutris.
 #
 # Características de este parche:
-#  1. Inyecta 'PROTON_SONY_HIDRAW_XINPUT=1' en environment.d y sesión systemd
-#     para que Wine/Proton exponga automáticamente el mando como mando XInput.
-#  2. Parchea automáticamente todos los juegos instalados en Lutris y crea la
-#     configuración global del runner Wine con la variable activada.
+#  1. Migra y elimina las variables globales heredadas de HIDRAW/XInput.
+#  2. Permite configurar de forma explícita cada juego externo de Lutris con
+#     PROTON_PREFER_SDL=1. Proton entonces usa SDL, desactiva Steam Input solo
+#     para ese proceso y no toma el mando virtual de Steam.
 #  3. Verifica e instala 'steam-devices' para reglas udev (/dev/uinput y /dev/hidraw*).
-#  4. Configura '/etc/modprobe.d/bluetooth-ertm.conf' para desactivar ERTM en
-#     mandos Xbox por Bluetooth (evita bucles de desconexión).
+#  4. Configura ERTM únicamente si hay un mando Xbox Bluetooth conectado
+#     (evita bucles de desconexión sin alterar DualSense/DualShock).
 #  5. Asegura la carga del módulo de kernel 'uinput'.
 #  6. Diagnóstico en vivo de mandos conectados (Bluetooth, evdev, hidraw, SDL2).
-#  7. Función de reversión (Rollback) limpia a los valores originales.
+#  7. Función de reversión (Rollback) que restaura únicamente los juegos que
+#     este script haya modificado.
 # ==============================================================================
 
 set -eo pipefail
@@ -68,6 +69,16 @@ if [ "$REAL_USER" = "root" ]; then
 fi
 REAL_HOME=$(eval echo "~$REAL_USER")
 
+# Ejecuta una orden como el usuario de sesión sin pedir sudo cuando el script ya
+# se ejecuta como ese mismo usuario.
+as_real_user() {
+    if [ "$EUID" -eq 0 ] && [ "$REAL_USER" != "root" ]; then
+        sudo -u "$REAL_USER" "$@"
+    else
+        "$@"
+    fi
+}
+
 validate_system() {
     if [ ! -f /etc/os-release ]; then
         log_error "No se pudo identificar la distribución (/etc/os-release ausente)."
@@ -87,111 +98,162 @@ validate_system() {
 # ==============================================================================
 # 3. PARCHES A NIVEL DE USUARIO (SESIÓN Y PROTON/WINE)
 # ==============================================================================
-# 3.1 Variables de entorno de sesión (~/.config/environment.d)
-apply_user_environment() {
-    log_step "1. Configurando variables de entorno para Proton, Wine y Lutris"
+# 3.1 Migración de variables globales heredadas
+# Steam y Proton ya eligen el backend de entrada apropiado por título. No se
+# debe forzar HIDRAW ni XInput de Sony globalmente: el ajuste SDL se aplica solo
+# al juego externo de Lutris que lo necesita.
+remove_legacy_environment() {
+    local env_file="$REAL_HOME/.config/environment.d/99-gamepad.conf"
 
-    local env_dir="$REAL_HOME/.config/environment.d"
-    local env_file="$env_dir/99-gamepad.conf"
+    if [ -f "$env_file" ]; then
+        python3 - "$env_file" <<'PY'
+from pathlib import Path
+import sys
 
-    sudo -u "$REAL_USER" mkdir -p "$env_dir"
+path = Path(sys.argv[1])
+legacy = ("PROTON_SONY_HIDRAW_XINPUT=", "PROTON_ENABLE_HIDRAW=")
+lines = path.read_text(encoding="utf-8").splitlines()
+kept = [line for line in lines if not line.startswith(legacy)]
 
-    log_info "Escribiendo $env_file..."
-    cat << 'EOF' | sudo -u "$REAL_USER" tee "$env_file" > /dev/null
-# Optimización y compatibilidad de mandos Bluetooth/USB para Proton y Wine
-PROTON_SONY_HIDRAW_XINPUT=1
-PROTON_ENABLE_HIDRAW=1
-EOF
-
-    # Aplicar inmediatamente en la sesión activa de systemd
-    if sudo -u "$REAL_USER" systemctl --user show-environment &>/dev/null; then
-        sudo -u "$REAL_USER" systemctl --user import-environment PROTON_SONY_HIDRAW_XINPUT PROTON_ENABLE_HIDRAW || true
-        log_success "Variable PROTON_SONY_HIDRAW_XINPUT=1 exportada a la sesión systemd activa."
-    else
-        log_warn "No se pudo importar al entorno systemd del usuario (sesión no detectada)."
+# No dejamos un archivo vacío creado exclusivamente por la versión anterior.
+if any(line.strip() and not line.lstrip().startswith("#") for line in kept):
+    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+else:
+    path.unlink()
+PY
+        log_info "Variables globales heredadas eliminadas de $env_file"
     fi
 
-    log_success "Variables de entorno de usuario configuradas correctamente."
+    # environment.d se aplica al iniciar sesión. Esta llamada retira también
+    # los valores de una sesión systemd que hubiera sido modificada antes.
+    if as_real_user systemctl --user show-environment &>/dev/null; then
+        as_real_user systemctl --user unset-environment \
+            PROTON_SONY_HIDRAW_XINPUT PROTON_ENABLE_HIDRAW || true
+        log_info "Los procesos de la sesión ya abiertos conservarán sus variables hasta reiniciar sesión."
+    fi
 }
 
-# 3.2 Parches para configuraciones de juegos y runner en Lutris
+apply_user_environment() {
+    log_step "1. Limpiando variables globales de entrada heredadas"
+    remove_legacy_environment
+    log_success "Steam y Proton usarán su configuración normal por título."
+}
+
+# 3.2 Configuración selectiva para juegos externos de Lutris
+# Uso: apply_lutris_patch [texto-del-slug-o-nombre]
 apply_lutris_patch() {
-    log_step "2. Parcheando configuraciones de Lutris para mapeo XInput"
+    local selector="${1:-}"
+    log_step "2. Configurando entrada de Lutris"
 
     local lutris_games_dir="$REAL_HOME/.local/share/lutris/games"
     local lutris_config_games_dir="$REAL_HOME/.config/lutris/games"
-    local lutris_wine_runner_dir="$REAL_HOME/.config/lutris/runners"
-    local patched_count=0
+    local state_dir="$REAL_HOME/.config/linuxtools"
+    local state_file="$state_dir/gamepad-lutris-state.json"
 
-    # Helper en Python para modificar archivos YAML de Lutris sin romper formato
-    local python_patcher='
-import sys, yaml, os
+    as_real_user mkdir -p "$state_dir"
+    as_real_user python3 - "$selector" "$state_file" "$lutris_games_dir" "$lutris_config_games_dir" <<'PY'
+from pathlib import Path
+import json
+import sys
+import yaml
 
-file_path = sys.argv[1]
+selector, state_name, *directories = sys.argv[1:]
+selector = selector.casefold().strip()
+state_path = Path(state_name)
 try:
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+except (FileNotFoundError, json.JSONDecodeError):
+    state = {"lutris_games": {}}
+entries = state.setdefault("lutris_games", {})
 
+def environment_mappings(data):
+    """Yield active and installer system.env mappings without touching others."""
     if not isinstance(data, dict):
-        sys.exit(0)
+        return
+    system = data.get("system")
+    if isinstance(system, dict) and isinstance(system.get("env"), dict):
+        yield system["env"]
+    script = data.get("script")
+    if isinstance(script, dict):
+        installer_system = script.get("system")
+        if isinstance(installer_system, dict) and isinstance(installer_system.get("env"), dict):
+            yield installer_system["env"]
 
-    system = data.setdefault("system", {})
-    if not isinstance(system, dict):
-        system = {}
-        data["system"] = system
+cleaned = configured = 0
+for directory in map(Path, directories):
+    if not directory.is_dir():
+        continue
+    for path in directory.glob("*.yml"):
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as error:
+            print(f"AVISO: no se pudo leer {path.name}: {error}")
+            continue
+        if not isinstance(data, dict):
+            continue
+        changed = False
+        for candidate in environment_mappings(data):
+            for key in ("PROTON_SONY_HIDRAW_XINPUT", "PROTON_ENABLE_HIDRAW"):
+                if key in candidate:
+                    del candidate[key]
+                    cleaned += 1
+                    changed = True
+        identifiers = " ".join(str(data.get(key, "")) for key in ("name", "slug", "game_slug"))
+        if selector and (selector in identifiers.casefold() or selector in path.stem.casefold()):
+            system = data.setdefault("system", {})
+            if not isinstance(system, dict):
+                system = data["system"] = {}
+            env = system.setdefault("env", {})
+            if not isinstance(env, dict):
+                env = system["env"] = {}
+            path_key = str(path)
+            if path_key not in entries:
+                entries[path_key] = {
+                    "had_value": "PROTON_PREFER_SDL" in env,
+                    "value": env.get("PROTON_PREFER_SDL"),
+                }
+            if str(env.get("PROTON_PREFER_SDL", "")) != "1":
+                env["PROTON_PREFER_SDL"] = "1"
+                configured += 1
+                changed = True
+        if changed:
+            path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
-    env = system.setdefault("env", {})
-    if not isinstance(env, dict):
-        env = {}
-        system["env"] = env
+if selector:
+    state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+print(f"CLEANED={cleaned}")
+print(f"CONFIGURED={configured}")
+PY
 
-    if env.get("PROTON_SONY_HIDRAW_XINPUT") != "1":
-        env["PROTON_SONY_HIDRAW_XINPUT"] = "1"
-        with open(file_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False)
-        print("PATCHED")
-    else:
-        print("ALREADY_SET")
-except Exception as e:
-    print(f"ERROR: {e}", file=sys.stderr)
-    sys.exit(1)
-'
+    # La versión anterior también podía haber creado este archivo global. Solo
+    # eliminamos nuestras claves y preservamos cualquier otro ajuste del usuario.
+    local wine_runner_yml="$REAL_HOME/.config/lutris/runners/wine.yml"
+    if [ -f "$wine_runner_yml" ]; then
+        as_real_user python3 - "$wine_runner_yml" <<'PY'
+from pathlib import Path
+import sys
+import yaml
 
-    # Buscar y parchear en ~/.local/share/lutris/games/*.yml
-    for dir_path in "$lutris_games_dir" "$lutris_config_games_dir"; do
-        if [ -d "$dir_path" ]; then
-            while IFS= read -r -d '' yml_file; do
-                local res
-                res=$(sudo -u "$REAL_USER" python3 -c "$python_patcher" "$yml_file" 2>/dev/null || true)
-                if [ "$res" = "PATCHED" ]; then
-                    log_success "Juego parcheado en Lutris: $(basename "$yml_file")"
-                    ((patched_count++))
-                elif [ "$res" = "ALREADY_SET" ]; then
-                    log_info "Juego ya configurado: $(basename "$yml_file")"
-                fi
-            done < <(find "$dir_path" -maxdepth 1 -name "*.yml" -print0 2>/dev/null)
-        fi
-    done
-
-    # Configuración global del runner Wine en Lutris (~/.config/lutris/runners/wine.yml)
-    sudo -u "$REAL_USER" mkdir -p "$lutris_wine_runner_dir"
-    local wine_runner_yml="$lutris_wine_runner_dir/wine.yml"
-    if [ ! -f "$wine_runner_yml" ]; then
-        cat << 'EOF' | sudo -u "$REAL_USER" tee "$wine_runner_yml" > /dev/null
-system:
-  env:
-    PROTON_SONY_HIDRAW_XINPUT: '1'
-EOF
-        log_success "Configuración global de Lutris Wine creada en $wine_runner_yml"
-    else
-        local res
-        res=$(sudo -u "$REAL_USER" python3 -c "$python_patcher" "$wine_runner_yml" 2>/dev/null || true)
-        if [ "$res" = "PATCHED" ]; then
-            log_success "Configuración global de Lutris Wine actualizada."
-        fi
+path = Path(sys.argv[1])
+data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+env = data.get("system", {}).get("env", {}) if isinstance(data, dict) else {}
+changed = False
+if isinstance(env, dict):
+    for key in ("PROTON_SONY_HIDRAW_XINPUT", "PROTON_ENABLE_HIDRAW"):
+        if key in env:
+            del env[key]
+            changed = True
+if changed:
+    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+PY
     fi
 
-    log_success "Lutris actualizado con soporte para mandos Sony XInput ($patched_count juegos actualizados)."
+    if [ -n "$selector" ]; then
+        log_success "Lutris configurado para '$selector' con SDL físico, sin Steam Input en ese juego."
+    else
+        log_info "Migración completada. No se modificó ningún juego de Lutris de forma global."
+        log_info "Para un juego externo: $0 --lutris-sdl <slug-o-nombre>"
+    fi
 }
 
 # ==============================================================================
@@ -219,21 +281,32 @@ apply_system_fixes() {
         log_success "Paquete 'steam-devices' ya instalado en el sistema."
     fi
 
-    # 4.2 Cargar módulo uinput automáticamente
+    # 4.2 Cargar módulo uinput automáticamente. No sobrescribimos una política
+    # existente de módulos; solo creamos un archivo que podamos identificar.
     log_info "Asegurando carga del módulo de kernel 'uinput'..."
-    echo "uinput" | $run_cmd tee /etc/modules-load.d/uinput.conf > /dev/null
+    if [ ! -e /etc/modules-load.d/uinput.conf ]; then
+        cat << 'EOF' | $run_cmd tee /etc/modules-load.d/linuxtools-gamepad-uinput.conf > /dev/null
+# Managed by linuxtools gamepad patch
+uinput
+EOF
+    fi
     $run_cmd modprobe uinput || true
 
-    # 4.3 Desactivar ERTM para mandos Bluetooth de Xbox (evita desconexiones infinitas)
-    log_info "Configurando desactivación de ERTM para mandos Bluetooth..."
-    cat << 'EOF' | $run_cmd tee /etc/modprobe.d/bluetooth-ertm.conf > /dev/null
-# Desactiva Enhanced Re-Transmission Mode para permitir emparejamiento estable de mandos Xbox
+    # 4.3 ERTM solo se desactiva para un mando Xbox detectado. DualSense y
+    # DualShock no lo necesitan y un cambio global de Bluetooth no es inocuo.
+    if bluetoothctl devices Connected 2>/dev/null | grep -qi 'xbox\|microsoft'; then
+        log_info "Mando Xbox Bluetooth detectado; configurando ERTM desactivado..."
+        if [ ! -e /etc/modprobe.d/linuxtools-gamepad-bluetooth-ertm.conf ]; then
+            cat << 'EOF' | $run_cmd tee /etc/modprobe.d/linuxtools-gamepad-bluetooth-ertm.conf > /dev/null
+# Managed by linuxtools gamepad patch; improves some Xbox Bluetooth controllers.
 options bluetooth disable_ertm=1
 EOF
-
-    # Aplicar disable_ertm en caliente si el archivo de sysfs existe
-    if [ -f /sys/module/bluetooth/parameters/disable_ertm ]; then
-        echo 1 | $run_cmd tee /sys/module/bluetooth/parameters/disable_ertm > /dev/null || true
+        fi
+        if [ -f /sys/module/bluetooth/parameters/disable_ertm ]; then
+            echo 1 | $run_cmd tee /sys/module/bluetooth/parameters/disable_ertm > /dev/null || true
+        fi
+    else
+        log_info "No hay mando Xbox Bluetooth conectado; se conserva ERTM sin cambios."
     fi
 
     # 4.4 Recargar reglas udev
@@ -255,9 +328,11 @@ show_steam_recommendations() {
     echo -e " 2. Asegúrate de que la opción:"
     echo -e "    ${GREEN}«Habilitar Steam Input para mandos de PlayStation»${RESET}"
     echo -e "    esté en ${BOLD}«Activado»${RESET} (no en 'Solo en juegos sin soporte' ni 'Desactivado')."
-    echo -e " 3. En la biblioteca de Steam, haz clic derecho en el juego > ${BOLD}Propiedades > Mando${RESET}:"
-    echo -e "    Asegúrate de que no esté en 'Deshabilitar Steam Input'."
-    echo -e " 4. Si juegas por Bluetooth, ${YELLOW}desconecta mandos secundarios USB${RESET} innecesarios"
+    echo -e " 3. En la biblioteca de Steam, configura Steam Input ${BOLD}por juego${RESET}."
+    echo -e " 4. Para un juego iniciado por Lutris mientras Steam está abierto, usa:"
+    echo -e "    ${GREEN}$0 --lutris-sdl <slug-o-nombre>${RESET}"
+    echo -e "    Esto no cambia Steam: solo aísla ese proceso externo del mando virtual."
+    echo -e " 5. Si un juego antiguo solo admite un mando, desconecta mandos secundarios"
     echo -e "    para que no compitan por ser el Mando del Jugador 1."
     echo -e "${CYAN}--------------------------------------------------${RESET}"
 }
@@ -336,23 +411,23 @@ if not joysticks:
     print('No se encontraron joysticks en /dev/input/js* para probar.')
     exit(0)
 
-print(f'Probando eventos en {joysticks[0]}...')
+fds = {}
 try:
-    fd = os.open(joysticks[0], os.O_RDONLY | os.O_NONBLOCK)
+    for joystick in joysticks:
+        fds[os.open(joystick, os.O_RDONLY | os.O_NONBLOCK)] = joystick
+    print('Probando eventos en: ' + ', '.join(fds.values()))
     start = time.time()
-    events_count = 0
+    events = {path: 0 for path in fds.values()}
     while time.time() - start < 3.0:
-        r, _, _ = select.select([fd], [], [], 0.1)
-        if r:
-            data = os.read(fd, 64)
-            events_count += len(data) // 8
-    os.close(fd)
-    if events_count > 0:
-        print(f'\033[0;32m[OK] Se recibieron {events_count} eventos correctamente. ¡El mando responde!\033[0m')
-    else:
-        print('\033[1;33m[!] No se registraron eventos en 3 segundos (asegúrate de presionar botones).\033[0m')
-except Exception as e:
-    print(f'Error al leer dispositivo: {e}')
+        ready, _, _ = select.select(list(fds), [], [], 0.1)
+        for fd in ready:
+            events[fds[fd]] += len(os.read(fd, 64)) // 8
+    for path, count in events.items():
+        status = '\033[0;32m[OK]\033[0m' if count else '\033[1;33m[!]\033[0m'
+        print(f'{status} {path}: {count} eventos')
+finally:
+    for fd in fds:
+        os.close(fd)
 " 2>/dev/null || true
 }
 
@@ -362,23 +437,40 @@ except Exception as e:
 restore_defaults() {
     log_step "Restaurando configuraciones originales..."
 
-    local env_file="$REAL_HOME/.config/environment.d/99-gamepad.conf"
-    if [ -f "$env_file" ]; then
-        rm -f "$env_file"
-        log_info "Eliminado: $env_file"
-    fi
+    remove_legacy_environment
 
-    local wine_runner_yml="$REAL_HOME/.config/lutris/runners/wine.yml"
-    if [ -f "$wine_runner_yml" ]; then
-        rm -f "$wine_runner_yml"
-        log_info "Eliminado: $wine_runner_yml"
+    local state_file="$REAL_HOME/.config/linuxtools/gamepad-lutris-state.json"
+    if [ -f "$state_file" ]; then
+        as_real_user python3 - "$state_file" <<'PY'
+from pathlib import Path
+import json
+import sys
+import yaml
+
+state_path = Path(sys.argv[1])
+state = json.loads(state_path.read_text(encoding="utf-8"))
+for filename, previous in state.get("lutris_games", {}).items():
+    path = Path(filename)
+    if not path.is_file():
+        continue
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    env = data.setdefault("system", {}).setdefault("env", {})
+    if previous.get("had_value"):
+        env["PROTON_PREFER_SDL"] = previous.get("value")
+    else:
+        env.pop("PROTON_PREFER_SDL", None)
+    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+state_path.unlink()
+PY
+        log_info "Restaurados los perfiles de Lutris modificados por este script."
     fi
 
     if [ "$EUID" -eq 0 ] || sudo -n true 2>/dev/null; then
         local run_cmd=""
         [ "$EUID" -ne 0 ] && run_cmd="sudo"
-        $run_cmd rm -f /etc/modprobe.d/bluetooth-ertm.conf /etc/modules-load.d/uinput.conf || true
-        log_info "Eliminados archivos en /etc/modprobe.d/ y /etc/modules-load.d/"
+        $run_cmd rm -f /etc/modprobe.d/linuxtools-gamepad-bluetooth-ertm.conf \
+            /etc/modules-load.d/linuxtools-gamepad-uinput.conf || true
+        log_info "Eliminados únicamente los archivos de sistema gestionados por linuxtools."
     fi
 
     log_success "Configuraciones revertidas. Es recomendable reiniciar la sesión o el equipo."
@@ -394,11 +486,12 @@ show_menu() {
         echo -e "${CYAN}==============================================================${RESET}"
         echo -e "  1) ${BOLD}Aplicar parche completo${RESET} (Proton, Lutris, udev, uinput, Bluetooth)"
         echo -e "  2) Configurar solo variables de usuario y Lutris (sin root)"
-        echo -e "  3) Configurar solo reglas de sistema (udev, uinput, ERTM) (requiere sudo)"
-        echo -e "  4) Ver diagnóstico de mandos conectados"
-        echo -e "  5) Probar respuesta de botones en vivo"
-        echo -e "  6) Revertir cambios (Rollback)"
-        echo -e "  7) Salir"
+        echo -e "  3) Configurar un juego externo de Lutris (sin Steam Input)"
+        echo -e "  4) Configurar solo reglas de sistema (udev, uinput, ERTM) (requiere sudo)"
+        echo -e "  5) Ver diagnóstico de mandos conectados"
+        echo -e "  6) Probar respuesta de botones en vivo"
+        echo -e "  7) Revertir cambios (Rollback)"
+        echo -e "  8) Salir"
         echo -e "${CYAN}--------------------------------------------------------------${RESET}"
         echo -ne "Opción: "
         read -r choice
@@ -416,18 +509,28 @@ show_menu() {
                 show_steam_recommendations
                 ;;
             3)
-                apply_system_fixes
+                echo -ne "Slug o parte del nombre del juego de Lutris: "
+                read -r selector
+                if [ -n "$selector" ]; then
+                    apply_user_environment
+                    apply_lutris_patch "$selector"
+                else
+                    log_error "Debes indicar un slug o nombre."
+                fi
                 ;;
             4)
-                diagnose_controllers
+                apply_system_fixes
                 ;;
             5)
-                test_live_controller
+                diagnose_controllers
                 ;;
             6)
-                restore_defaults
+                test_live_controller
                 ;;
             7)
+                restore_defaults
+                ;;
+            8)
                 echo "¡Hasta luego!"
                 exit 0
                 ;;
@@ -455,6 +558,14 @@ if [ $# -gt 0 ]; then
             apply_lutris_patch
             show_steam_recommendations
             ;;
+        --lutris-sdl)
+            if [ -z "${2:-}" ]; then
+                log_error "Uso: $0 --lutris-sdl <slug-o-nombre>"
+                exit 1
+            fi
+            apply_user_environment
+            apply_lutris_patch "$2"
+            ;;
         --system)
             apply_system_fixes
             ;;
@@ -470,8 +581,9 @@ if [ $# -gt 0 ]; then
         -h|--help)
             echo "Uso: $0 [opción]"
             echo "Opciones:"
-            echo "  -a, --all, --install    Aplica el parche completo (variables, Lutris, udev, uinput)"
-            echo "  --user                  Aplica solo configuración de usuario (environment.d y Lutris)"
+            echo "  -a, --all, --install    Migra variables antiguas y aplica reglas seguras del sistema"
+            echo "  --user                  Migra variables antiguas sin tocar reglas de sistema"
+            echo "  --lutris-sdl <juego>    Aísla un juego externo de Lutris de Steam Input"
             echo "  --system                Aplica solo reglas de sistema (steam-devices, uinput, ERTM)"
             echo "  -d, --diagnose          Diagnostica mandos conectados (Bluetooth, evdev, SDL)"
             echo "  -t, --test              Prueba interactiva de botones y respuesta en vivo"
