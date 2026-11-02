@@ -114,6 +114,47 @@ restart_user_services() {
     fi
 }
 
+# Calibrar volumen de hardware al 100% (0.00 dB) en ALSA y WirePlumber para eliminar atenuación fantasma
+calibrate_hardware_volume() {
+    log_info "Calibrando volumen de hardware al 100% (0.00 dB) en ALSA y WirePlumber..."
+
+    # 1. Calibrar mezcladores ALSA directamente en hardware DAC
+    for card_num in 0 1 2 3; do
+        if [ -d "/proc/asound/card$card_num" ]; then
+            amixer -c "$card_num" sset PCM 100% 2>/dev/null || true
+            amixer -c "$card_num" sset PCM 255 2>/dev/null || true
+            amixer -c "$card_num" sset Master 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset Speaker 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset Headphone 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "Line Out" 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "Auto-Mute Mode" "Disabled" 2>/dev/null || true
+
+            # Controles digitales HDMI/IEC958
+            amixer -c "$card_num" sset IEC958 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "IEC958 Default PCM" 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset HDMI 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "Digital" 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "S/PDIF" 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "S/PDIF,0" 100% unmute 2>/dev/null || true
+            amixer -c "$card_num" sset "S/PDIF,1" 100% unmute 2>/dev/null || true
+        fi
+    done
+
+    # 2. Calibrar salidas físicas en WirePlumber para actualizar la persistencia en default-routes
+    sleep 0.5
+    if [ "$EUID" -eq 0 ]; then
+        for hw_sink in $(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-mute "$hw_sink" 0 2>/dev/null || true
+        done
+    else
+        for hw_sink in $(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
+            wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
+            wpctl set-mute "$hw_sink" 0 2>/dev/null || true
+        done
+    fi
+}
+
 # 2. Configurar Núcleo de Audio Hi-Fi Bit-Perfect
 install_core_hifi() {
     log_step "Aplicando Configuración de Audio de Alta Fidelidad y Bit-Perfect (Modo: $TARGET_MODE)..."
@@ -122,6 +163,22 @@ install_core_hifi() {
     mkdir -p "$PW_BASE/pipewire.conf.d"
     mkdir -p "$PW_BASE/pipewire-pulse.conf.d"
     mkdir -p "$WP_BASE/wireplumber.conf.d"
+
+    # Retirar filtros intermedios para que la salida sea directa y pura al hardware DAC
+    rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/60-hifi-loss.conf" \
+          "$REAL_HOME/.config/pipewire/pipewire.conf.d/60-native-spatial-audio.conf" \
+          "$REAL_HOME/.config/pipewire/pipewire.conf.d/65-windows-reference-profile.conf" \
+          "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d/60-hifi-loss-routing.conf" \
+          "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/60-hifi-loss-router.conf" \
+          "$REAL_HOME/.config/wireplumber/scripts/hifi-loss-router.lua" 2>/dev/null || true
+    if [ "$EUID" -eq 0 ]; then
+        rm -f /etc/pipewire/pipewire.conf.d/60-hifi-loss.conf \
+              /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf \
+              /etc/pipewire/pipewire.conf.d/65-windows-reference-profile.conf \
+              /etc/pipewire/pipewire-pulse.conf.d/60-hifi-loss-routing.conf \
+              /etc/wireplumber/wireplumber.conf.d/60-hifi-loss-router.conf \
+              /etc/wireplumber/scripts/hifi-loss-router.lua 2>/dev/null || true
+    fi
 
     # A) PipeWire Engine: dynamic sample rates 44.1k - 192k, resample quality 14 (soxr)
     local pw_conf="$PW_BASE/pipewire.conf.d/99-hires-audio.conf"
@@ -239,37 +296,31 @@ EOF
         fi
     fi
 
-    # D) ALSA Hardware Mixer: Fijar PCM y controles al 100% (0 dB) para transmisión de bits inalterada al DAC
-    log_info "Calibrando mezclador ALSA a 0 dB de ganancia digital (Bit-Perfect)..."
-    for card_num in 0 1 2; do
-        if [ -d "/proc/asound/card$card_num" ]; then
-            # Controles analógicos existentes
-            amixer -c "$card_num" sset PCM 100% 2>/dev/null || true
-            amixer -c "$card_num" sset PCM 255 2>/dev/null || true
-            amixer -c "$card_num" sset Master 100% unmute 2>/dev/null || true
-            amixer -c "$card_num" sset Speaker 100% unmute 2>/dev/null || true
-            amixer -c "$card_num" sset Headphone 100% unmute 2>/dev/null || true
-            amixer -c "$card_num" sset "Line Out" 100% unmute 2>/dev/null || true
-            amixer -c "$card_num" sset "Auto-Mute Mode" "Disabled" 2>/dev/null || true
-
-            # Controles digitales HDMI/IEC958 para solución de volumen bajo en HDMI
-            amixer -c "$card_num" sset IEC958 100% unmute 2>/dev/null || true
-            amixer -c "$card_num" sset "IEC958 Default PCM" 100% unmute 2>/dev/null || true
-            amixer -c "$card_num" sset HDMI 100% unmute 2>/dev/null || true
-            amixer -c "$card_num" sset "Digital" 100% unmute 2>/dev/null || true
-            amixer -c "$card_num" sset "S/PDIF" 100% unmute 2>/dev/null || true
-            amixer -c "$card_num" sset "S/PDIF,0" 100% unmute 2>/dev/null || true
-            amixer -c "$card_num" sset "S/PDIF,1" 100% unmute 2>/dev/null || true
-        fi
-    done
-
     # Asegurar propiedad correcta si se creó como usuario normal
     if [ "$EUID" -ne 0 ]; then
         chmod -R u+rw "$PW_BASE" "$WP_BASE" 2>/dev/null || true
     fi
 
     restart_user_services
-    log_success "¡Núcleo de audio Hi-Fi Bit-Perfect configurado y activado!"
+
+    # Calibrar volumen de hardware tanto en ALSA como en WirePlumber al 100% (0 dB)
+    calibrate_hardware_volume
+
+    # Restaurar destino físico por defecto si existía afinidad a filtros previos
+    local default_hw_sink
+    if [ "$EUID" -eq 0 ]; then
+        default_hw_sink=$(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
+        if [ -n "$default_hw_sink" ]; then
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-default "$default_hw_sink" 2>/dev/null || true
+        fi
+    else
+        default_hw_sink=$(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
+        if [ -n "$default_hw_sink" ]; then
+            wpctl set-default "$default_hw_sink" 2>/dev/null || true
+        fi
+    fi
+
+    log_success "¡Núcleo de audio Hi-Fi Bit-Perfect configurado y activado (Salida Directa a Hardware)!"
 }
 
 # 3. Configurar Bluetooth Hi-Fi (LDAC HQ, SBC-XQ, aptX)
@@ -431,6 +482,14 @@ install_hifi_loss_audio() {
     # Reiniciar WirePlumber para compilar y cargar el gancho nativo en memoria
     restart_user_services
 
+    # Calibrar volumen de salidas físicas y del sink virtual al 100% (0 dB)
+    calibrate_hardware_volume
+    if [ "$EUID" -eq 0 ]; then
+        sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" pactl set-sink-volume hifi_loss_sink 100% 2>/dev/null || true
+    else
+        pactl set-sink-volume hifi_loss_sink 100% 2>/dev/null || true
+    fi
+
     log_success "¡Perfil Maestro 'hifi-loss' integrado en las entrañas nativas de PipeWire y WirePlumber!"
 }
 
@@ -488,19 +547,16 @@ install_windows_reference_audio() {
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-default "$sink_id" 2>/dev/null || true
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
         fi
-        for hw_sink in $(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
-            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
-        done
     else
         sink_id=$(wpctl status 2>/dev/null | grep "windows_reference_sink" | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
         if [ -n "$sink_id" ]; then
             wpctl set-default "$sink_id" 2>/dev/null || true
             wpctl set-volume "$sink_id" 1.0 2>/dev/null || true
         fi
-        for hw_sink in $(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)'); do
-            wpctl set-volume "$hw_sink" 1.0 2>/dev/null || true
-        done
     fi
+
+    # Calibrar todas las salidas de hardware al 100% (0 dB)
+    calibrate_hardware_volume
 
     log_success "¡Perfil de Referencia Neutro Windows activado en PipeWire! Respuesta plana 1:1, 0% diafonía y techo de -0.14 dBFS."
 }
@@ -738,9 +794,20 @@ restore_defaults() {
     rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/60-hifi-loss.conf"
     rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/60-native-spatial-audio.conf"
     rm -f "$REAL_HOME/.config/pipewire/pipewire.conf.d/65-windows-reference-profile.conf"
+    rm -f "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d/60-hifi-loss-routing.conf"
     rm -f "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf"
     rm -f "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-alsa-hifi.conf"
     rm -f "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf"
+    rm -f "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/60-hifi-loss-router.conf"
+    rm -f "$REAL_HOME/.config/wireplumber/scripts/hifi-loss-router.lua"
+
+    # Limpiar afinidades obsoletas a filtros en WirePlumber
+    if [ -f "$REAL_HOME/.local/state/wireplumber/stream-properties" ]; then
+        sed -i 's/"target":"hifi_loss_sink", //g; s/, "target":"hifi_loss_sink"//g; s/"target":"windows_reference_sink", //g; s/, "target":"windows_reference_sink"//g' "$REAL_HOME/.local/state/wireplumber/stream-properties" 2>/dev/null || true
+    fi
+    if [ -f "$REAL_HOME/.local/state/wireplumber/default-nodes" ]; then
+        sed -i '/default\.configured\.audio\.sink=.*hifi_loss.*/d; /default\.configured\.audio\.sink=.*windows_reference.*/d' "$REAL_HOME/.local/state/wireplumber/default-nodes" 2>/dev/null || true
+    fi
 
     # Si es root, eliminar también las de sistema
     if [ "$EUID" -eq 0 ]; then
@@ -748,9 +815,12 @@ restore_defaults() {
         rm -f /etc/pipewire/pipewire.conf.d/60-hifi-loss.conf
         rm -f /etc/pipewire/pipewire.conf.d/60-native-spatial-audio.conf
         rm -f /etc/pipewire/pipewire.conf.d/65-windows-reference-profile.conf
+        rm -f /etc/pipewire/pipewire-pulse.conf.d/60-hifi-loss-routing.conf
         rm -f /etc/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf
         rm -f /etc/wireplumber/wireplumber.conf.d/50-alsa-hifi.conf
         rm -f /etc/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf
+        rm -f /etc/wireplumber/wireplumber.conf.d/60-hifi-loss-router.conf
+        rm -f /etc/wireplumber/scripts/hifi-loss-router.lua
         rm -f /etc/modprobe.d/audio-hifi-powersave.conf
         rm -f /etc/modprobe.d/alsa-alc623-pins.conf
         rm -f /lib/firmware/alsa-realtek-alc623.fw
@@ -762,6 +832,24 @@ restore_defaults() {
     fi
 
     restart_user_services
+
+    # Calibrar volumen de salidas físicas al 100% (0 dB)
+    calibrate_hardware_volume
+
+    # Restaurar destino físico por defecto
+    local default_hw_sink
+    if [ "$EUID" -eq 0 ]; then
+        default_hw_sink=$(sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
+        if [ -n "$default_hw_sink" ]; then
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" wpctl set-default "$default_hw_sink" 2>/dev/null || true
+        fi
+    else
+        default_hw_sink=$(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oP '\b[0-9]+(?=\.\s+)' | head -n 1)
+        if [ -n "$default_hw_sink" ]; then
+            wpctl set-default "$default_hw_sink" 2>/dev/null || true
+        fi
+    fi
+
     log_success "Configuraciones Hi-Fi eliminadas. Sistema restaurado a los valores estándar de Fedora."
 }
 
@@ -775,13 +863,14 @@ show_menu() {
         echo -e "Modo actual: ${BOLD}${TARGET_MODE}${NC} ($( [ "$TARGET_MODE" = "system" ] && echo "/etc/ (global)" || echo "$REAL_HOME/.config/ (usuario)" ))"
         echo -e "Selecciona una opción:\n"
         echo -e "  ${YELLOW}${BOLD}=== OPCIÓN RECOMENDADA (TODO EN UNO) ===${NC}"
-        echo -e "  7) ${YELLOW}${BOLD}Instalación Completa${NC} -> Configura todo de una vez (Audio HD + Bluetooth HD + Perfil de sonido)\n"
+        echo -e "  7) ${YELLOW}${BOLD}Instalación Completa${NC} -> Configura todo de una vez (Audio Bit-Perfect + Bluetooth HD + Perfil de sonido)\n"
         echo -e "  ${CYAN}${BOLD}=== CONFIGURACIONES INDIVIDUALES ===${NC}"
-        echo -e "  1) ${GREEN}${BOLD}Configurar Audio Hi-Fi / Bit-Perfect & Audio Espacial Nativo${NC} -> Mapeo de audio de Windows + mejora espacial Lossless"
-        echo -e "  2) ${GREEN}${BOLD}Audio de Alta Fidelidad (Bit-Perfect)${NC} -> Máxima calidad 24/32-bit sin pérdidas para cable, USB y HDMI"
-        echo -e "  3) ${CYAN}Bluetooth de Alta Calidad${NC} -> Activa códecs HD (LDAC, aptX, SBC-XQ) para audífonos inalámbricos"
-        echo -e "  4) ${MAGENTA}Parche para Equipos Lenovo (ALC623)${NC} -> Corrige altavoces internos o jack 3.5mm que no suenan"
-        echo -e "  5) ${BLUE}Ecualizador Gráfico EasyEffects${NC} -> Instala app con ventana visual para ajustar el sonido a mano\n"
+        echo -e "  1) ${GREEN}${BOLD}Audio de Alta Fidelidad (Bit-Perfect Puro Directo)${NC} -> Máxima calidad 24/32-bit sin filtros ni pérdidas (100% volumen real)"
+        echo -e "  2) ${CYAN}Bluetooth de Alta Calidad${NC} -> Activa códecs HD (LDAC, aptX, SBC-XQ) para audífonos inalámbricos"
+        echo -e "  3) ${GREEN}Perfil Maestro Optimizado 'hifi-loss'${NC} -> Mejores graves, voces claras y protección anti-distorsión"
+        echo -e "  4) ${CYAN}Perfil Neutro de Referencia Windows${NC} -> Respuesta plana 1:1, 0% diafonía y techo dinámico (-0.14 dBFS)"
+        echo -e "  5) ${MAGENTA}Parche para Equipos Lenovo (ALC623)${NC} -> Corrige altavoces internos o jack 3.5mm que no suenan"
+        echo -e "  6) ${BLUE}Ecualizador Gráfico EasyEffects${NC} -> Instala app con ventana visual para ajustar el sonido a mano\n"
         echo -e "  ${WHITE}${BOLD}=== HERRAMIENTAS Y PRUEBAS ===${NC}"
         echo -e "  8) Ver Diagnóstico y Estado -> Muestra tarjetas de sonido detectadas y perfil activo"
         echo -e "  9) Probar Sonido -> Reproduce tonos de prueba en diferentes calidades"
@@ -793,41 +882,43 @@ show_menu() {
 
         case "$choice" in
             1)
-                install_windows_reference_audio
-                install_hifi_loss_audio
+                install_core_hifi
                 ;;
             2)
-                install_core_hifi
-                ;;
-            3)
                 install_bluetooth_hifi
                 ;;
+            3)
+                install_hifi_loss_audio
+                ;;
             4)
-                install_alc623_pin_patch
+                install_windows_reference_audio
                 ;;
             5)
-                install_dsp_suite
+                install_alc623_pin_patch
                 ;;
             6)
+                install_dsp_suite
+                ;;
+            7)
                 install_core_hifi
                 install_bluetooth_hifi
                 install_hifi_loss_audio
                 ;;
-            7)
+            8)
                 show_status
                 ;;
-            8)
+            9)
                 run_bitperfect_test
                 ;;
-            9)
+            10)
                 restore_defaults
                 ;;
-            10)
+            11)
                 echo "¡Hasta luego!"
                 exit 0
                 ;;
             *)
-                log_error "Opción no válida."
+                log_error "Opción no válida: $choice"
                 ;;
         esac
     done

@@ -42,14 +42,24 @@ SimpleEventHook {
     end
 
     -- Caso 2: Salida del filtro hifi-loss (hifi_loss_playback)
-    -- Enlazar al mejor sink físico disponible (DP, USB-C, Analógico)
+    -- Enlazar al mejor sink físico disponible (DP, USB-C, Analógico, Bluetooth)
     if node_name == "hifi_loss_playback" and direction == "output" then
       local def_target = lutils.findDefaultLinkable (si)
-      if def_target ~= nil then
-        local def_props = def_target.properties
-        if def_props ["node.name"] ~= "hifi_loss_sink" then
-          event:set_data ("target", def_target)
-          log:info (si, "... [hifi-loss] Salida vinculada al hardware: " .. tostring(def_props["node.name"]))
+      if def_target ~= nil and def_target.properties ["node.name"] ~= "hifi_loss_sink" then
+        event:set_data ("target", def_target)
+        log:info (si, "... [hifi-loss] Salida vinculada al hardware: " .. tostring(def_target.properties["node.name"]))
+      else
+        -- Fallback: Enlazar a la primera salida física de hardware (ALSA o Bluetooth)
+        for lnkbl in om:iterate { type = "SiLinkable" } do
+          local target_props = lnkbl.properties
+          local tname = tostring (target_props ["node.name"])
+          if target_props ["item.node.direction"] == "input" and
+             tname ~= "hifi_loss_sink" and
+             (string.match(tname, "^alsa_output") or string.match(tname, "^bluez_output")) then
+            event:set_data ("target", lnkbl)
+            log:info (si, "... [hifi-loss] Salida vinculada a hardware físico: " .. tname)
+            break
+          end
         end
       end
     end

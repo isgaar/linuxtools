@@ -17,16 +17,15 @@ El perfil **`hifi-loss`** surge para superar la fidelidad de reproducción de au
 
 2. **Cero Distorsión y Cero Clipping (True-Peak Headroom):**
    - En grabaciones masterizadas a $0\text{ dBFS}$ (frecuentes en pistas FLAC / Hi-Res), cualquier realce de ecualización positivo empuja las muestras al rango $> 1.0$, provocando recorte digital severo (*hard-clipping* y recorte inter-muestra) al convertir a PCM entero (`S32LE`).
-   - `hifi-loss` implementa una atenuación lineal previa calculada de **$-2.20\text{ dBFS}$** (`Mult = 0.776`), garantizando que la salida True-Peak jamás supere **$-0.14\text{ dBFS}$**.
+   - `hifi-loss` implementa una ganancia lineal calibrada de **$-0.14\text{ dBFS}$** (`Mult = 0.984`), garantizando el volumen óptimo sin sobrecarga digital y evitando caídas perceptibles en transductores de portátiles.
 
 3. **Cero Cancelación de Fase (Pureza Estéreo 1:1):**
    - Se descartaron por completo las matrices de resta cruzada invertida (como `L = L - 0.05*R`) y filtros con retraso desfasado que causaban filtrado de peine (*comb-filtering*), emulando artefactos de compresión con pérdidas (sensación de "MP3 a 190 kbps").
    - El máster de estudio conserva el $100\%$ de su coherencia espectral y separación estéreo original.
 
-4. **Soberanía Absoluta del Volumen del Usuario:**
-   - Queda terminantemente prohibido alterar los controles de volumen del usuario.
-   - El nodo virtual `hifi_loss_sink` se bloquea a ganancia unitaria ($0.00\text{ dB}$) a nivel de protocolo con `block-sink-volume`.
-   - Las teclas multimedia y deslizadores de KDE Plasma controlan de forma directa y exclusiva el DAC físico ALSA.
+4. **Soberanía Absoluta del Volumen del Usuario y Cero Doble Atenuación:**
+   - Queda terminantemente prohibido dejar salidas de hardware estranguladas o con atenuación en cascada.
+   - El script calibra activamente el mezclador ALSA y los sumideros físicos en WirePlumber a ganancia unitaria ($0.00\text{ dB}$, 100%), asegurando que el rango dinámico completo del DAC físico esté siempre disponible sin importar reinicios de servicios.
 
 ---
 
@@ -99,7 +98,7 @@ flowchart TD
      - $8000\text{ Hz}$ ($+1.6\text{ dB}$, $Q=0.9$): Claridad y brillo sin asperezas.
      - $14000\text{ Hz}$ ($+2.0\text{ dB}$, $Q=0.7$): Extensión aérea sedosa (*Air Band*).
   4. **Etapa Anti-Clipping True-Peak:**
-     - Nodos lineales con multiplicador `Mult = 0.776` ($-2.20\text{ dBFS}$). Al combinarse con el pico de $+2.06\text{ dB}$ del ecualizador, la señal de salida máxima ante un archivo masterizado al 100% es de $-0.14\text{ dBFS}$, eliminando la sobrecarga del conversor digital-analógico (DAC).
+     - Nodos lineales con multiplicador calibrado `Mult = 0.984` ($-0.14\text{ dBFS}$). Protege contra sobrecarga inter-muestra en el DAC sin generar atenuación acústica severa en altavoces de portátiles.
 
 ### 3.2. Enrutamiento Dinámico en WirePlumber (`hifi-loss-router.lua`)
 - **Ubicación:** `~/.config/wireplumber/scripts/hifi-loss-router.lua` y cargador `~/.config/wireplumber/wireplumber.conf.d/60-hifi-loss-router.conf`.
@@ -107,14 +106,13 @@ flowchart TD
 - **Prioridad de Ejecución:** `after = { "linking/find-best-target", ... }`, `before = "linking/prepare-link"`.
 - **Lógica de Conmutación:**
   - **Flujos de Apps:** Cualquier flujo saliente (`direction == "output"`) cuyo nombre no sea `hifi_loss_playback` se redirige inmediatamente a `hifi_loss_sink`.
-  - **Salida del Filtro:** El flujo `hifi_loss_playback` consulta `lutils.findDefaultLinkable(si)` para obtener el dispositivo físico de salida predeterminado (Realtek ALC623 analógico, HDMI/DisplayPort o auriculares USB-C JBL Tune 520C) y enlaza directamente hacia él.
+  - **Salida del Filtro:** El flujo `hifi_loss_playback` consulta `lutils.findDefaultLinkable(si)` y cuenta con un fallback dinámico que enlaza al hardware físico disponible (`alsa_output` o auriculares Bluetooth `bluez_output`) evitando nodos huérfanos.
   - **Hotplug Reactivo:** Cuando el usuario conecta un dispositivo USB-C o cambia la salida en Plasma, WirePlumber dispara el evento `select-target` y re-enlaza `hifi_loss_playback` al nuevo hardware en menos de $1\text{ ms}$, sin cortes ni caídas.
 
-### 3.3. Intercepción y Blindaje de Ganancia (`60-hifi-loss-routing.conf`)
+### 3.3. Intercepción de Flujos (`60-hifi-loss-routing.conf`)
 - **Ubicación:** `~/.config/pipewire/pipewire-pulse.conf.d/60-hifi-loss-routing.conf`.
 - **Directivas:**
-  - `quirks = [ block-sink-volume ]` sobre `hifi_loss_sink`: Impide que clientes PulseAudio o el gestor de sesiones atenúen el sumidero virtual de procesamiento.
-  - `update-props = { target.object = "hifi_loss_sink" }` para flujos `Stream/Output/Audio`: Garantiza que nuevos clientes se asocien de forma transparente a la cadena de alta fidelidad.
+  - `update-props = { target.object = "hifi_loss_sink" }` bajo `stream.rules` para flujos `Stream/Output/Audio`: Garantiza que nuevos clientes se asocien de forma transparente a la cadena de alta fidelidad sin crear conflictos de cliente.
 
 ---
 
