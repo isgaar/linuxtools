@@ -103,11 +103,14 @@ restart_user_services() {
     if [ "$EUID" -eq 0 ]; then
         if [ -d "/run/user/$REAL_UID" ]; then
             sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" \
+                systemctl --user daemon-reload 2>/dev/null || true
+            sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/$REAL_UID" \
                 systemctl --user restart pipewire pipewire-pulse wireplumber 2>/dev/null || true
             sleep 1
             log_success "Servidores de audio reiniciados con éxito."
         fi
     else
+        systemctl --user daemon-reload 2>/dev/null || true
         systemctl --user restart pipewire pipewire-pulse wireplumber 2>/dev/null || true
         sleep 1
         log_success "Servidores de audio reiniciados con éxito."
@@ -301,6 +304,7 @@ EOF
         chmod -R u+rw "$PW_BASE" "$WP_BASE" 2>/dev/null || true
     fi
 
+    install_speaker_jack_unlock_patch --no-restart
     restart_user_services
 
     # Calibrar volumen de hardware tanto en ALSA como en WirePlumber al 100% (0 dB)
@@ -593,6 +597,63 @@ EOF
         fi
     fi
     log_info "Aviso: El parche de hardware ALSA se cargará automáticamente al reiniciar el sistema o al recargar el módulo snd_hda_intel."
+    install_speaker_jack_unlock_patch
+}
+
+# 6b. Desbloquear bocina integrada en el panel de sonido cuando el jack trasero (Line Out) está conectado
+install_speaker_jack_unlock_patch() {
+    local no_restart=0
+    if [ "${1:-}" = "--no-restart" ]; then
+        no_restart=1
+    fi
+
+    local sys_paths_dir="/usr/share/alsa-card-profile/mixer/paths"
+    local sys_speaker_conf="$sys_paths_dir/analog-output-speaker.conf"
+    if [ ! -f "$sys_speaker_conf" ]; then
+        log_warn "No se encontró $sys_speaker_conf; se omite el desbloqueo de bocina integrada."
+        return 0
+    fi
+
+    log_step "Desbloqueando selección libre de bocina integrada con jack trasero conectado (ACP_PATHS_DIR)..."
+    local user_acp_dir="$REAL_HOME/.config/alsa-card-profile/mixer/paths"
+    local wp_dropin_dir="$REAL_HOME/.config/systemd/user/wireplumber.service.d"
+    local pw_dropin_dir="$REAL_HOME/.config/systemd/user/pipewire.service.d"
+
+    mkdir -p "$user_acp_dir" "$wp_dropin_dir" "$pw_dropin_dir"
+
+    local f base
+    for f in "$sys_paths_dir"/*; do
+        base="$(basename "$f")"
+        if [ "$base" != "analog-output-speaker.conf" ]; then
+            ln -sf "$f" "$user_acp_dir/$base"
+        fi
+    done
+
+    awk '
+        /^\[Jack .*Line Out.*\]$/ { in_lo=1; print; next }
+        /^\[/ { in_lo=0 }
+        in_lo && /^state\.plugged[[:space:]]*=[[:space:]]*no$/ { print "state.plugged = unknown"; next }
+        { print }
+    ' "$sys_speaker_conf" > "$user_acp_dir/analog-output-speaker.conf"
+
+    cat > "$wp_dropin_dir/acp-paths.conf" << 'EOF'
+[Service]
+Environment="ACP_PATHS_DIR=%h/.config/alsa-card-profile/mixer/paths"
+EOF
+    cat > "$pw_dropin_dir/acp-paths.conf" << 'EOF'
+[Service]
+Environment="ACP_PATHS_DIR=%h/.config/alsa-card-profile/mixer/paths"
+EOF
+
+    if [ "$EUID" -eq 0 ]; then
+        chown -R -h "$REAL_USER:$REAL_USER" "$REAL_HOME/.config/alsa-card-profile" \
+            "$wp_dropin_dir" "$pw_dropin_dir" 2>/dev/null || true
+    fi
+
+    if [ "$no_restart" -eq 0 ]; then
+        restart_user_services
+    fi
+    log_success "Bocina integrada desbloqueada: podrás elegir libremente entre Altavoces y Línea de salida en el panel de sonido."
 }
 
 # 5. Instalar y Configurar Suite DSP Alternativa (EasyEffects Opcional)
@@ -702,7 +763,10 @@ show_status() {
           "$REAL_HOME/.config/pipewire/pipewire.conf.d/65-windows-reference-profile.conf" \
           "$REAL_HOME/.config/pipewire/pipewire-pulse.conf.d/99-hires-pulse.conf" \
           "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-alsa-hifi.conf" \
-          "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf" 2>/dev/null || echo "Sin archivos de usuario."
+          "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf" \
+          "$REAL_HOME/.config/alsa-card-profile/mixer/paths/analog-output-speaker.conf" \
+          "$REAL_HOME/.config/systemd/user/wireplumber.service.d/acp-paths.conf" \
+          "$REAL_HOME/.config/systemd/user/pipewire.service.d/acp-paths.conf" 2>/dev/null || echo "Sin archivos de usuario."
 
     echo -e "${CYAN}[Sistema /etc/]${NC}"
     ls -l /etc/pipewire/pipewire.conf.d/99-hires-audio.conf \
@@ -800,6 +864,9 @@ restore_defaults() {
     rm -f "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/50-bluetooth-hifi.conf"
     rm -f "$REAL_HOME/.config/wireplumber/wireplumber.conf.d/60-hifi-loss-router.conf"
     rm -f "$REAL_HOME/.config/wireplumber/scripts/hifi-loss-router.lua"
+    rm -rf "$REAL_HOME/.config/alsa-card-profile"
+    rm -f "$REAL_HOME/.config/systemd/user/wireplumber.service.d/acp-paths.conf"
+    rm -f "$REAL_HOME/.config/systemd/user/pipewire.service.d/acp-paths.conf"
 
     # Limpiar afinidades obsoletas a filtros en WirePlumber
     if [ -f "$REAL_HOME/.local/state/wireplumber/stream-properties" ]; then
@@ -944,6 +1011,9 @@ if [ $# -gt 0 ]; then
         -p|--patch-pins|--alc623)
             install_alc623_pin_patch
             ;;
+        --unlock-speaker|--speaker-unlock)
+            install_speaker_jack_unlock_patch
+            ;;
         -e|--easyeffects|--dsp)
             install_dsp_suite
             ;;
@@ -970,6 +1040,7 @@ if [ $# -gt 0 ]; then
             echo "  -l, --hifi-loss, -n       Activa perfil 'hifi-loss' (mejores graves, voces claras y anti-distorsión)"
             echo "  -w, --windows-ref         Activa perfil neutro plano de referencia (estilo Windows sin retoques)"
             echo "  -p, --patch-pins          Aplica parche de hardware para equipos Lenovo (Realtek ALC623)"
+            echo "  --unlock-speaker          Desbloquea la bocina integrada cuando el jack trasero está conectado"
             echo "  -e, --easyeffects         Instala suite gráfica EasyEffects (ecualizador con ventana)"
             echo "  -s, --status              Muestra el estado y diagnóstico del hardware"
             echo "  -t, --test                Ejecuta la prueba de frecuencias de sonido"
