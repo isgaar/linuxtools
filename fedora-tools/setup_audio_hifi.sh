@@ -630,10 +630,9 @@ install_speaker_jack_unlock_patch() {
     done
 
     awk '
-        /^\[Jack .*Line Out.*\]$/ { in_lo=1; print; next }
-        /^\[/ { in_lo=0 }
-        in_lo && /^state\.plugged[[:space:]]*=[[:space:]]*no$/ { print "state.plugged = unknown"; next }
-        { print }
+        /^\[Jack .*Line Out.*\]$/ { skip=1; next }
+        /^\[/ { skip=0 }
+        !skip { print }
     ' "$sys_speaker_conf" > "$user_acp_dir/analog-output-speaker.conf"
 
     cat > "$wp_dropin_dir/acp-paths.conf" << 'EOF'
